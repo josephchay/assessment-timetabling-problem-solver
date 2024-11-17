@@ -6,6 +6,8 @@ from z3 import *
 import re
 import time
 
+from gui import timetablinggui
+
 
 # Domain Models
 @dataclass
@@ -228,45 +230,141 @@ class ProblemFileReader:
             )
 
 
+class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
+    def __init__(self):
+        super().__init__()
+
+        # Configure window
+        self.title("Exam Scheduler")
+        self.geometry("800x600")
+
+        # Configure grid layout
+        self.grid_rowconfigure(0, weight=1)
+        self.grid_columnconfigure(1, weight=1)
+
+        # Create sidebar frame with widgets
+        self.sidebar_frame = timetablinggui.GUIFrame(self, width=140, corner_radius=0)
+        self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
+        self.sidebar_frame.grid_rowconfigure(4, weight=1)
+
+        self.logo_label = timetablinggui.GUILabel(self.sidebar_frame, text="Exam Scheduler",
+                                                  font=timetablinggui.GUIFont(size=20, weight="bold"))
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(20, 10))
+
+        self.select_folder_button = timetablinggui.GUIButton(self.sidebar_frame, text="Select Tests Folder",
+                                                             command=self.select_folder)
+        self.select_folder_button.grid(row=1, column=0, padx=20, pady=10)
+
+        self.run_button = timetablinggui.GUIButton(self.sidebar_frame, text="Run Scheduler",
+                                                   command=self.run_scheduler)
+        self.run_button.grid(row=2, column=0, padx=20, pady=10)
+
+        self.clear_button = timetablinggui.GUIButton(self.sidebar_frame, text="Clear Results",
+                                                     command=self.clear_results)
+        self.clear_button.grid(row=3, column=0, padx=20, pady=10)
+
+        # Create main frame with results
+        self.main_frame = timetablinggui.GUIFrame(self, corner_radius=0)
+        self.main_frame.grid(row=0, column=1, sticky="nsew")
+        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=1)
+
+        # Create textbox for results
+        self.results_textbox = timetablinggui.GUITextbox(self.main_frame, width=400)
+        self.results_textbox.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+
+        # Progress bar
+        self.progressbar = timetablinggui.GUIProgressBar(self.main_frame)
+        self.progressbar.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
+        self.progressbar.set(0)
+
+        # Status label
+        self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
+        self.status_label.grid(row=2, column=0, padx=20, pady=10)
+
+        self.tests_dir = None
+
+    def select_folder(self):
+        """Open folder selection dialog"""
+        folder = timetablinggui.filedialog.askdirectory(title="Select Tests Directory")
+        if folder:
+            self.tests_dir = Path(folder)
+            self.status_label.configure(text=f"Selected folder: {folder}")
+            self.results_textbox.insert("end", f"Selected test instances folder: {folder}\n")
+
+    def clear_results(self):
+        """Clear results textbox"""
+        self.results_textbox.delete("0.0", "end")
+        self.progressbar.set(0)
+        self.status_label.configure(text="Ready")
+
+    def run_scheduler(self):
+        """Run the scheduler on all test files"""
+        if not self.tests_dir:
+            self.status_label.configure(text="Please select a test instances folder before proceeding.")
+            return
+
+        self.results_textbox.delete("0.0", "end")
+        start = time.time()
+
+        sat_results = []  # Store results for satisfiable instances
+        unsat_results = []  # Store results for unsatisfiable instances
+
+        # Get and sort test files
+        test_files = sorted(
+            [f for f in self.tests_dir.iterdir() if f.name != ".idea"],
+            key=lambda x: int(re.search(r'\d+', x.stem).group() or 0)
+        )
+
+        total_files = len(test_files)
+        for i, test_file in enumerate(test_files):
+            try:
+                self.status_label.configure(text=f"Processing {test_file.name}...")
+                self.progressbar.set((i + 1) / total_files)
+                self.update()
+
+                # Read and solve problem
+                problem = ProblemFileReader.read_file(str(test_file))
+                scheduler = ExamSchedulerSolver(problem)
+                solution = scheduler.solve()
+
+                # Format results
+                instance_result = [f"\nInstance: {test_file.name}"]
+                if solution:
+                    instance_result.extend(["sat", solution])
+                    sat_results.extend(instance_result)
+                else:
+                    instance_result.append("unsat")
+                    unsat_results.extend(instance_result)
+                instance_result.append("―" * 40)
+
+                # Update GUI with results
+                self.results_textbox.insert("end", "\n".join(instance_result) + "\n")
+                self.results_textbox.see("end")
+
+            except Exception as e:
+                error_message = f"Error processing {test_file.name}: {str(e)}\n"
+                unsat_results.append(error_message)
+                self.results_textbox.insert("end", error_message)
+                self.results_textbox.see("end")
+
+        # Print final timing
+        elapsed = int((time.time() - start) * 1000)
+        timing_msg = f'\nTotal time: {elapsed} milliseconds'
+        self.results_textbox.insert("end", timing_msg)
+        self.status_label.configure(text="Completed!")
+        self.progressbar.set(1.0)
+
+
 def main():
-    """Main execution function"""
-    start = time.time()
-    tests_dir = Path("test_instances")
+    """Launch the GUI application"""
+    timetablinggui.set_appearance_mode("dark")  # Modes: system (default), light, dark
+    timetablinggui.set_default_color_theme("blue")  # Themes: blue (default), dark-blue, green
 
-    sat_results = []
-    unsat_results = []
-
-    # Process files in numerical order
-    test_files = sorted(
-        [f for f in tests_dir.iterdir() if f.name != ".idea"],
-        key=lambda x: int(re.search(r'\d+', x.stem).group() or 0)
-    )
-
-    for test_file in test_files:
-        try:
-            # Read and solve problem
-            problem = ProblemFileReader.read_file(str(test_file))
-            scheduler = ExamSchedulerSolver(problem)
-            solution = scheduler.solve()
-
-            # Format results
-            instance_result = [f"\nInstance: {test_file.name}"]
-            if solution:
-                instance_result.extend(["sat", solution])
-                sat_results.extend(instance_result)
-            else:
-                instance_result.append("unsat")
-                unsat_results.extend(instance_result)
-            instance_result.append("―" * 40)
-
-        except Exception as e:
-            unsat_results.append(f"Error processing {test_file.name}: {str(e)}")
-
-    # Print results
-    results = sat_results + unsat_results
-    print("\n".join(results))
-    print(f'\nTotal time: {int((time.time() - start) * 1000)} milliseconds')
+    app = ExamSchedulerGUI()
+    app.mainloop()
 
 
 if __name__ == "__main__":
     main()
+
