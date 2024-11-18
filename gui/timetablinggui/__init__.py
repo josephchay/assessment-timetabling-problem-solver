@@ -12,6 +12,7 @@ from .windows.widgets.font import FontManager
 from .windows.widgets.scaling import ScalingTracker
 from .windows.widgets.theme import ThemeManager
 from .windows.widgets.core_rendering import DrawEngine
+from .windows.widgets.table import TableManager
 
 # import base widgets
 from .windows.widgets.core_rendering import GUICanvas
