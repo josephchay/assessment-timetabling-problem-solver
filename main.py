@@ -1,12 +1,18 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+<<<<<<< Updated upstream
 from typing import List, Tuple, Optional, Dict, Set
 from z3 import *
+=======
+from typing import List
+>>>>>>> Stashed changes
 import re
 import time as time_module
 
+from filesystem.reader import ProblemFileReader
 from gui import timetablinggui
+<<<<<<< Updated upstream
 
 
 # Domain Models
@@ -230,6 +236,13 @@ class ProblemFileReader:
             )
 
 
+=======
+from solvers import ZThreeSolver
+from utilities import SchedulingProblem
+from visualization import TimetableAnalyzer
+
+
+>>>>>>> Stashed changes
 class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
     def __init__(self):
         super().__init__()
@@ -443,7 +456,12 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
 
                 # Read and solve problem
                 problem = ProblemFileReader.read_file(str(test_file))
+<<<<<<< Updated upstream
                 scheduler = ExamSchedulerSolver(problem)
+=======
+                self.current_problem = problem
+                scheduler = ZThreeSolver(problem)
+>>>>>>> Stashed changes
                 solution = scheduler.solve()
 
                 # Format results
