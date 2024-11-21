@@ -1,17 +1,7 @@
-from abc import ABC, abstractmethod
 from z3 import *
 from typing import List
 
-from utilities import SchedulingProblem
-
-
-class IConstraint(ABC):
-    """Interface for exam scheduling constraints"""
-
-    @abstractmethod
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
-        """Apply the constraint to the solver"""
-        pass
+from utilities import SchedulingProblem, IConstraint
 
 
 class BasicRangeConstraint(IConstraint):
@@ -72,11 +62,10 @@ class NoConsecutiveSlotsConstraint(IConstraint):
 
 
 class MaxExamsPerSlotConstraint(IConstraint):
-    """Additional: Limit concurrent exams per slot"""
+    """Constraint 5 (Additional): Limit concurrent exams per slot"""
 
     def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
         max_concurrent = 3
         for t in range(problem.number_of_slots):
-            concurrent_exams = Sum([If(exam_time[e] == t, 1, 0)
-                                    for e in range(problem.number_of_exams)])
+            concurrent_exams = Sum([If(exam_time[e] == t, 1, 0) for e in range(problem.number_of_exams)])
             solver.add(concurrent_exams <= max_concurrent)

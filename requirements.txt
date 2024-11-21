@@ -1,4 +1,7 @@
 z3-solver==4.13.3.0
-matplotlib
-seaborn
-numpy
+matplotlib==3.9.2
+seaborn==0.13.2
+numpy==1.26.4
+gurobipy==12.0.0
+ortools==9.11.4210
+pulp==2.9.0

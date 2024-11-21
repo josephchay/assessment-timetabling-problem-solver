@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
-from typing import Optional
-from z3 import *
+from typing import Optional, Protocol, List, Any
+from z3 import Solver, ArithRef
+from ortools.sat.python import cp_model
+import gurobipy as gp
 
 from utilities import SchedulingProblem
 from utilities.typehints import SolverMetrics
@@ -20,10 +22,22 @@ class ISolver(ABC):
         pass
 
 
-class IConstraint(ABC):
-    """Abstract class for exam scheduling constraints"""
+class IConstraint(Protocol):
+    def apply_z3(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
+        pass
+
+    def apply_ortools(self, model: cp_model.CpModel, problem: SchedulingProblem, exam_time: dict, exam_room: dict) -> None:
+        pass
+
+    def apply_gurobi(self, model: gp.Model, problem: SchedulingProblem, exam_time: dict, exam_room: dict) -> None:
+        pass
+
+
+class BaseSolver(ABC):
+    @abstractmethod
+    def get_solver_name(self) -> str:
+        pass
 
     @abstractmethod
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: list[ArithRef], exam_room: list[ArithRef]) -> None:
-        """Apply the constraint to the solver"""
+    def solve(self) -> list[dict[str, int | Any]] | None:
         pass
