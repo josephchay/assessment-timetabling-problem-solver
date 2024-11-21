@@ -8,8 +8,7 @@ from utilities.typehints import SchedulingProblem
 class BasicRangeConstraint(IConstraint):
     """Constraint 1: Each exam must be in exactly one room and one time slot"""
 
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
+    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
         for e in range(problem.number_of_exams):
             solver.add(exam_room[e] >= 0)
             solver.add(exam_room[e] < problem.number_of_rooms)
@@ -35,8 +34,7 @@ class RoomConflictConstraint(IConstraint):
 class RoomCapacityConstraint(IConstraint):
     """Constraint 3: Room capacity cannot be exceeded"""
 
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
+    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
         for e in range(problem.number_of_exams):
             for r in range(problem.number_of_rooms):
                 solver.add(
