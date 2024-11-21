@@ -1,11 +1,12 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Optional, Dict, Set
+from typing import List, Dict, Set
 
 
 # Domain Models
 @dataclass
 class Room:
     """Represents a room with its capacity"""
+
     id: int
     capacity: int
 
@@ -13,12 +14,14 @@ class Room:
 @dataclass
 class TimeSlot:
     """Represents a time slot"""
+
     id: int
 
 
 @dataclass
 class Exam:
     """Represents an exam with its assigned students"""
+
     id: int
     students: Set[int]
 
@@ -29,6 +32,7 @@ class Exam:
 @dataclass
 class SchedulingProblem:
     """Represents a complete scheduling problem instance"""
+
     rooms: List[Room]
     time_slots: List[TimeSlot]
     exams: List[Exam]
@@ -45,3 +49,15 @@ class SchedulingProblem:
     @property
     def number_of_exams(self) -> int:
         return len(self.exams)
+
+
+@dataclass
+class TimetableMetrics:
+    """Class to hold metrics for a timetable solution"""
+
+    room_utilization: Dict[int, float]
+    time_distribution: Dict[int, int]
+    student_spread: Dict[int, int]
+    average_room_utilization: float
+    average_exams_per_slot: float
+    average_student_spread: float

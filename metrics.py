@@ -1,17 +1,5 @@
-from dataclasses import dataclass
 from typing import Dict, List
-from utilities import SchedulingProblem
-
-
-@dataclass
-class TimetableMetrics:
-    """Class to hold metrics for a timetable solution"""
-    room_utilization: Dict[int, float]
-    time_distribution: Dict[int, int]
-    student_spread: Dict[int, int]
-    average_room_utilization: float
-    average_exams_per_slot: float
-    average_student_spread: float
+from utilities.class_typing import SchedulingProblem, TimetableMetrics
 
 
 class MetricsAnalyzer:
@@ -39,21 +27,40 @@ class MetricsAnalyzer:
         )
 
     def _calculate_room_utilization(self, solution: List[dict]) -> Dict[int, float]:
-        room_usage = {r.id: [] for r in self.problem.rooms}
+        """Calculate utilization percentage for each room"""
+        # Initialize room usage tracking per time slot
+        room_usage = {r.id: {t: 0 for t in range(self.problem.number_of_slots)}
+                      for r in self.problem.rooms}
 
+        # Track actual usage per time slot
         for exam_data in solution:
             exam = self.problem.exams[exam_data['examId']]
             room_id = exam_data['room']
-            room_usage[room_id].append(exam.get_student_count())
+            time_slot = exam_data['timeSlot']
+            room_usage[room_id][time_slot] = exam.get_student_count()
 
+        # Calculate utilization for each room
         utilization = {}
-        for room_id, student_counts in room_usage.items():
+        for room_id, slot_usage in room_usage.items():
             room_capacity = self.problem.rooms[room_id].capacity
-            if not student_counts or room_capacity == 0:
+            if room_capacity == 0:
                 utilization[room_id] = 0
+                continue
+
+            # Calculate utilization as average across all time slots
+            room_utilization = 0
+            used_slots = 0
+
+            for student_count in slot_usage.values():
+                if student_count > 0:
+                    room_utilization += (student_count / room_capacity) * 100
+                    used_slots += 1
+
+            if used_slots > 0:
+                # Calculate utilization as: (total utilization / total slots) to get average usage over time
+                utilization[room_id] = room_utilization / self.problem.number_of_slots
             else:
-                avg_students = sum(student_counts) / len(student_counts)
-                utilization[room_id] = (avg_students / room_capacity) * 100
+                utilization[room_id] = 0
 
         return utilization
 

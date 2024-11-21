@@ -1,93 +1,13 @@
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Set, Any
+from typing import List, Dict, Set, Any
 from z3 import *
 import re
 import time as time_module
 
 from gui import timetablinggui
+from constraints import IConstraint, BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
 from utilities import SchedulingProblem, Room, TimeSlot, Exam
 from visualization import TimetableAnalyzer
-
-
-class IConstraint(ABC):
-    """Interface for exam scheduling constraints"""
-
-    @abstractmethod
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
-        """Apply the constraint to the solver"""
-        pass
-
-
-class BasicRangeConstraint(IConstraint):
-    """Constraint 1: Each exam must be in exactly one room and one time slot"""
-
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
-        for e in range(problem.number_of_exams):
-            solver.add(exam_room[e] >= 0)
-            solver.add(exam_room[e] < problem.number_of_rooms)
-            solver.add(exam_time[e] >= 0)
-            solver.add(exam_time[e] < problem.number_of_slots)
-
-
-class RoomConflictConstraint(IConstraint):
-    """Constraint 2: At most one exam per room per time slot"""
-
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
-        for e1 in range(problem.number_of_exams):
-            for e2 in range(e1 + 1, problem.number_of_exams):
-                solver.add(
-                    Implies(
-                        And(exam_room[e1] == exam_room[e2],
-                            exam_time[e1] == exam_time[e2]),
-                        e1 == e2
-                    )
-                )
-
-
-class RoomCapacityConstraint(IConstraint):
-    """Constraint 3: Room capacity cannot be exceeded"""
-
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
-        for e in range(problem.number_of_exams):
-            for r in range(problem.number_of_rooms):
-                solver.add(
-                    Implies(
-                        exam_room[e] == r,
-                        problem.exams[e].get_student_count() <= problem.rooms[r].capacity
-                    )
-                )
-
-
-class NoConsecutiveSlotsConstraint(IConstraint):
-    """Constraint 4: No consecutive slots for same student"""
-
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
-        for student in range(problem.total_students):
-            student_exams = [
-                exam.id for exam in problem.exams
-                if student in exam.students
-            ]
-
-            for i, exam1 in enumerate(student_exams):
-                for exam2 in student_exams[i + 1:]:
-                    solver.add(exam_time[exam1] != exam_time[exam2])
-                    solver.add(exam_time[exam1] != exam_time[exam2] + 1)
-                    solver.add(exam_time[exam1] != exam_time[exam2] - 1)
-
-
-class MaxExamsPerSlotConstraint(IConstraint):
-    """Additional: Limit concurrent exams per slot"""
-
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
-        max_concurrent = 3
-        for t in range(problem.number_of_slots):
-            concurrent_exams = Sum([If(exam_time[e] == t, 1, 0)
-                                    for e in range(problem.number_of_exams)])
-            solver.add(concurrent_exams <= max_concurrent)
 
 
 class ExamSchedulerSolver:
@@ -108,7 +28,7 @@ class ExamSchedulerSolver:
             MaxExamsPerSlotConstraint()
         ]
 
-    def solve(self) -> list[dict[str, int | Any]]:
+    def solve(self) -> list[dict[str, int | Any]] | None:
         """Apply constraints and solve the scheduling problem"""
         # Apply all constraints
         for constraint in self.constraints:
@@ -184,16 +104,6 @@ class ProblemFileReader:
                 exams=exams,
                 total_students=num_students
             )
-
-
-def format_solution(solution: List[dict]) -> str:
-    """Format solution data into a string"""
-    formatted_lines = []
-    for exam_data in solution:
-        formatted_lines.append(
-            f"Exam {exam_data['examId']}: Room {exam_data['room']}, Time slot {exam_data['timeSlot']}"
-        )
-    return "\n".join(formatted_lines)
 
 
 class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
@@ -303,7 +213,6 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         """Show visualization in a separate window"""
         if solution:
             analyzer = TimetableAnalyzer(self.current_problem)
-            analyzer.create_visualization(solution)
 
     def select_folder(self):
         """Open folder selection dialog"""
@@ -350,15 +259,20 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
             # Create menu first (it will be hidden initially)
             visualization_menu = timetablinggui.GUIOptionMenu(
                 button_frame,
-                values=["Room Utilization", "Time Distribution",
-                        "Student Spread", "Timetable Heatmap"],
-                command=lambda choice, s=solution, p=problem: self.show_selected_visualization(choice, s, p)
+                values=[
+                    "Select Visualization",
+                    "Room Utilization",
+                    "Time Distribution",
+                    "Student Spread",
+                    "Timetable Heatmap"
+                ],
+                command=lambda choice, s=solution, p=problem: self.show_selected_visualization(choice, s, p, instance_name)
             )
 
             # Create view button
             view_button = timetablinggui.GUIButton(
                 button_frame,
-                text="View",
+                text="View Statistics",
                 width=60,
                 command=lambda m=visualization_menu: self.toggle_visualization_menu(m)
             )
@@ -392,11 +306,11 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
                     widget.pack_forget()
             menu.pack(side="top")
 
-    def show_selected_visualization(self, choice: str, solution: List[dict], problem: SchedulingProblem):
+    def show_selected_visualization(self, choice: str, solution: List[dict], problem: SchedulingProblem, instance_name: str):
         """Show the selected visualization"""
         if choice != "Select Visualization":  # Only proceed if a real choice was made
             analyzer = TimetableAnalyzer(problem, solution)
-            analyzer.create_graph_window(choice)
+            analyzer.create_graph_window(choice, instance_name)
 
             # Hide all menus after selection
             for widget in self.winfo_children():
@@ -416,7 +330,7 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
             table_data = []
             for line in result['formatted_solution'].split('\n'):
                 if line.strip():
-                    exam = line.split(': ')[0]
+                    exam = line.split(': ')[0].replace("Exam", "")
                     room_time = line.split(': ')[1].split(', ')
                     room = room_time[0].split(' ')[1]
                     time = room_time[1].split(' ')[2]
@@ -454,6 +368,16 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
                 table_data
             )
 
+    @staticmethod
+    def format_solution(solution: List[dict]) -> str:
+        """Format solution data into a string"""
+        formatted_lines = []
+        for exam_data in solution:
+            formatted_lines.append(
+                f"Exam {exam_data['examId']}: Room {exam_data['room']}, Time slot {exam_data['timeSlot']}"
+            )
+        return "\n".join(formatted_lines)
+
     def run_scheduler(self):
         """Run the scheduler on all test files"""
         if not self.tests_dir:
@@ -485,16 +409,16 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
 
                 # Format results for display
                 if solution:
-                    formatted_solution = format_solution(solution)
+                    formatted_solution = self.format_solution(solution)
                     sat_results.append({
-                        'instance_name': test_file.name,
+                        'instance_name': test_file.stem,
                         'solution': solution,
                         'problem': problem,
                         'formatted_solution': formatted_solution
                     })
                 else:
                     unsat_results.append({
-                        'instance_name': test_file.name
+                        'instance_name': test_file.stem
                     })
 
             except Exception as e:

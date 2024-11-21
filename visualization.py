@@ -11,7 +11,7 @@ from typing import List
 from gui import timetablinggui
 
 from metrics import MetricsAnalyzer
-from utilities import SchedulingProblem
+from utilities.class_typing import SchedulingProblem
 
 
 class TimetableAnalyzer:
@@ -21,10 +21,12 @@ class TimetableAnalyzer:
         self.metrics_analyzer = MetricsAnalyzer(problem)
         self.metrics = self.metrics_analyzer.calculate_metrics(solution)
 
-    def create_graph_window(self, graph_type: str) -> None:
+    def create_graph_window(self, graph_type: str, instance_name: str) -> None:
+        clean_instance_name = instance_name.split('/')[-1].split('.')[0]
+
         """Create a window showing a specific graph type"""
         window = tk.Toplevel()
-        window.title(f"Visualization - {graph_type}")
+        window.title(f"{clean_instance_name} - {graph_type}")
         window.geometry("1000x800")  # Even larger window
 
         # Set global font sizes
@@ -79,13 +81,18 @@ class TimetableAnalyzer:
 
     def _plot_room_utilization(self, ax):
         rooms = list(self.metrics.room_utilization.keys())
-        utilizations = list(self.metrics.room_utilization.values())
+        utilization = list(self.metrics.room_utilization.values())
 
-        ax.bar(rooms, utilizations)
+        ax.bar(rooms, utilization)
         ax.set_title('Room Utilization')
         ax.set_xlabel('Room ID')
         ax.set_ylabel('Utilization (%)')
         ax.axhline(y=self.metrics.average_room_utilization, color='r', linestyle='--', label='Average')
+
+        # Set integer ticks for room IDs
+        ax.set_xticks(rooms)
+        ax.set_xticklabels([str(int(r)) for r in rooms])  # Convert to integer labels
+
         ax.legend()
 
     def _plot_time_distribution(self, ax):
@@ -96,6 +103,10 @@ class TimetableAnalyzer:
         ax.set_title('Exam Distribution Across Time Slots')
         ax.set_xlabel('Time Slot')
         ax.set_ylabel('Number of Exams')
+
+        # Set integer y-axis
+        ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+
         ax.axhline(y=self.metrics.average_exams_per_slot, color='r', linestyle='--', label='Average')
         ax.legend()
 
@@ -107,6 +118,10 @@ class TimetableAnalyzer:
         ax.set_title('Student Exam Spread Distribution')
         ax.set_xlabel('Spread (slots)')
         ax.set_ylabel('Number of Students')
+
+        # Set integer axes
+        ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+        ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
 
     def _plot_timetable_heatmap(self, ax):
         grid = np.full((self.problem.number_of_slots, self.problem.number_of_rooms), np.nan)
