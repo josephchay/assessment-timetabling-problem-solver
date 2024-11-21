@@ -1,4 +1,4 @@
-from z3 import *
+from z3 import Solver, Int, unsat
 from typing import Any, List
 
 from utilities import SchedulingProblem
@@ -31,7 +31,7 @@ class ZThreeSolver:
         """Apply constraints and solve the scheduling problem"""
         # Apply all constraints
         for constraint in self.constraints:
-            constraint.apply(self.solver, self.problem, self.exam_time, self.exam_room)
+            constraint.apply_z3(self.solver, self.problem, self.exam_time, self.exam_room)
 
         # Check satisfiability
         if self.solver.check() == unsat:

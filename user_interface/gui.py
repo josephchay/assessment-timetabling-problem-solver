@@ -5,6 +5,7 @@ from z3 import *
 import re
 import time as time_module
 
+from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
 from solvers import ZThreeSolver
@@ -118,6 +119,25 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
 
         self.current_solution = None
         self.solutions = {}
+
+        # Add solver selection
+        self.solver_frame = timetablinggui.GUIFrame(self.sidebar_frame)
+        self.solver_frame.grid(row=4, column=0, padx=20, pady=10)
+
+        self.solver_label = timetablinggui.GUILabel(
+            self.solver_frame,
+            text="Select Solver:",
+            font=timetablinggui.GUIFont(size=12)
+        )
+        self.solver_label.pack(pady=5)
+
+        self.solver_menu = timetablinggui.GUIOptionMenu(
+            self.solver_frame,
+            values=list(SolverFactory.solvers.keys()),
+            command=None
+        )
+        self.solver_menu.set("z3")  # Default solver
+        self.solver_menu.pack()
 
     def show_visualization(self, solution):
         """Show visualization in a separate window"""
@@ -290,6 +310,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
 
     def run_scheduler(self):
         """Run the scheduler on all test files"""
+
         if not self.tests_dir:
             self.status_label.configure(text="Please select a test instances folder first.")
             return
@@ -297,7 +318,9 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         start = time_module.time()
         sat_results = []
         unsat_results = []
-        self.solutions = {}  # Clear previous solutions
+        all_solver_results = {}  # For comparison view
+
+        selected_solver = self.solver_menu.get()
 
         test_files = sorted(
             [f for f in self.tests_dir.iterdir() if f.name != ".idea"],
@@ -306,18 +329,32 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
 
         total_files = len(test_files)
         for i, test_file in enumerate(test_files):
+            if test_file.name == ".idea":
+                continue
+
             try:
                 self.status_label.configure(text=f"Processing {test_file.name}...")
                 self.progressbar.set((i + 1) / total_files)
                 self.update()
-
-                # Read and solve problem
                 problem = ProblemFileReader.read_file(str(test_file))
                 self.current_problem = problem
-                scheduler = ZThreeSolver(problem)
-                solution = scheduler.solve()
 
-                # Format results for display
+                # Store results for each solver if "All" is selected
+                if selected_solver == "All":
+                    solver_results = SolverFactory.solve_with_all_solvers(problem)
+                    all_solver_results[test_file.stem] = solver_results
+
+                    # Use first successful solution for display
+                    success_solution = next(
+                        (result['solution'] for result in solver_results.values()
+                         if result['solution'] is not None),
+                        None
+                    )
+                    solution = success_solution
+                else:
+                    solver = SolverFactory.get_solver(selected_solver, problem)
+                    solution = solver.solve()
+
                 if solution:
                     formatted_solution = self.format_solution(solution)
                     sat_results.append({
@@ -327,23 +364,19 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                         'formatted_solution': formatted_solution
                     })
                 else:
-                    unsat_results.append({
-                        'instance_name': test_file.stem
-                    })
+                    unsat_results.append({'instance_name': test_file.stem})
 
             except Exception as e:
-                error_message = f"Error processing {test_file.name}: {str(e)}"
                 unsat_results.append({
-                    'instance_name': test_file.name,
-                    'error': error_message
+                    'instance_name': test_file.stem,
+                    'error': str(e)
                 })
 
-        # Create/update tables with results
+        # Update tables and comparison view
         self.create_tables(sat_results, unsat_results)
 
         elapsed = int((time_module.time() - start) * 1000)
         self.status_label.configure(text=f"Completed! Time: {elapsed}ms")
-        self.progressbar.set(1.0)
 
     def clear_results(self):
         """Clear all results"""

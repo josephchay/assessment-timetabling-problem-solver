@@ -36,6 +36,18 @@ class ORToolsSolver(BaseSolver):
         for constraint in self.constraints:
             constraint.apply_ortools(self.model, self.problem, self.exam_time, self.exam_room)
 
+        # Add objective to spread exams
+        max_time = self.model.NewIntVar(0, self.problem.number_of_slots - 1, 'max_time')
+        min_time = self.model.NewIntVar(0, self.problem.number_of_slots - 1, 'min_time')
+
+        # Link variables
+        for e in range(self.problem.number_of_exams):
+            self.model.Add(max_time >= self.exam_time[e])
+            self.model.Add(min_time <= self.exam_time[e])
+
+        # Minimize the span
+        self.model.Minimize(max_time - min_time)
+
         # Solve
         solver = cp_model.CpSolver()
         status = solver.Solve(self.model)

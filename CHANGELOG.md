@@ -26,4 +26,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated code structure to be more clean through Separation of Concerns.
 - Updated code structure for preparations for alternative solutions.
 - Updated with minor changes in code structure.
--
+- Refactored to make Ortools solver analyzes the constraints better.
