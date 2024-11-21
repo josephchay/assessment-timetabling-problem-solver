@@ -126,7 +126,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
 
         self.solver_label = timetablinggui.GUILabel(
             self.solver_frame,
-            text="Select Solver:",
+            text="Select Solution:",
             font=timetablinggui.GUIFont(size=12)
         )
         self.solver_label.pack(pady=5)

@@ -5,20 +5,11 @@ from pulp import (
     LpInteger,
     LpBinary,
     PULP_CBC_CMD,
-    LpStatusOptimal,
-    LpStatusInfeasible,
+    LpStatus,
     value,
     lpSum
 )
 from typing import Any
-
-from constraints import (
-    BasicRangeConstraint,
-    RoomConflictConstraint,
-    RoomCapacityConstraint,
-    NoConsecutiveSlotsConstraint,
-    MaxExamsPerSlotConstraint
-)
 from utilities import BaseSolver, SchedulingProblem
 
 
@@ -27,31 +18,15 @@ class CBCSolver(BaseSolver):
         self.problem = problem
         self.model = LpProblem("AssessmentScheduler", LpMinimize)
 
-        # Create variables
-        self.exam_time = {}
-        self.exam_room = {}
+        # Create main variables
+        self.exam_assignment = {}
         for e in range(problem.number_of_exams):
-            self.exam_time[e] = LpVariable(
-                name=f'exam_{e}_time',
-                lowBound=0,
-                upBound=problem.number_of_slots - 1,
-                cat=LpInteger
-            )
-            self.exam_room[e] = LpVariable(
-                name=f'exam_{e}_room',
-                lowBound=0,
-                upBound=problem.number_of_rooms - 1,
-                cat=LpInteger
-            )
-
-        # Register constraints
-        self.constraints = [
-            BasicRangeConstraint(),
-            RoomConflictConstraint(),
-            RoomCapacityConstraint(),
-            NoConsecutiveSlotsConstraint(),
-            MaxExamsPerSlotConstraint()
-        ]
+            for r in range(problem.number_of_rooms):
+                for t in range(problem.number_of_slots):
+                    self.exam_assignment[(e, r, t)] = LpVariable(
+                        name=f'exam_{e}_room_{r}_time_{t}',
+                        cat=LpBinary
+                    )
 
     @staticmethod
     def get_solver_name() -> str:
@@ -59,60 +34,78 @@ class CBCSolver(BaseSolver):
 
     def solve(self) -> list[dict[str, int | Any]] | None:
         try:
-            # Apply constraints
-            for constraint in self.constraints:
-                constraint.apply_cbc(self.model, self.problem, self.exam_time, self.exam_room)
-
-            # Add objective to spread exams
-            max_time = LpVariable(
-                name='max_time',
-                lowBound=0,
-                upBound=self.problem.number_of_slots - 1,
-                cat=LpInteger
-            )
-            min_time = LpVariable(
-                name='min_time',
-                lowBound=0,
-                upBound=self.problem.number_of_slots - 1,
-                cat=LpInteger
-            )
-
-            # Link variables
+            # 1. Each exam must be assigned exactly once
             for e in range(self.problem.number_of_exams):
-                self.model += max_time >= self.exam_time[e]
-                self.model += min_time <= self.exam_time[e]
+                self.model += lpSum(self.exam_assignment[(e, r, t)]
+                                    for r in range(self.problem.number_of_rooms)
+                                    for t in range(self.problem.number_of_slots)) == 1
 
-            # Set objective to minimize the spread
-            self.model += max_time - min_time
+            # 2. Room capacity constraints
+            for r in range(self.problem.number_of_rooms):
+                for t in range(self.problem.number_of_slots):
+                    self.model += lpSum(
+                        self.exam_assignment[(e, r, t)] * self.problem.exams[e].get_student_count()
+                        for e in range(self.problem.number_of_exams)
+                    ) <= self.problem.rooms[r].capacity
 
-            # Create solver with correct parameters
-            solver = PULP_CBC_CMD(
-                msg=0,  # Suppress output
-                timeLimit=30,  # 30 second time limit
-                options=['allowableGap', '0.1']  # 10% gap tolerance
+            # 3. Student conflict constraints
+            for student in range(self.problem.total_students):
+                student_exams = [e for e in range(self.problem.number_of_exams)
+                                 if student in self.problem.exams[e].students]
+
+                # No same time slot for a student
+                for t in range(self.problem.number_of_slots):
+                    self.model += lpSum(
+                        self.exam_assignment[(e, r, t)]
+                        for e in student_exams
+                        for r in range(self.problem.number_of_rooms)
+                    ) <= 1
+
+                # No consecutive time slots
+                for t in range(self.problem.number_of_slots - 1):
+                    self.model += lpSum(
+                        self.exam_assignment[(e, r, t)] + self.exam_assignment[(e, r, t + 1)]
+                        for e in student_exams
+                        for r in range(self.problem.number_of_rooms)
+                    ) <= 1
+
+            # Simple objective - minimize total time slots used
+            self.model += lpSum(
+                t * self.exam_assignment[(e, r, t)]
+                for e in range(self.problem.number_of_exams)
+                for r in range(self.problem.number_of_rooms)
+                for t in range(self.problem.number_of_slots)
             )
 
-            # Solve the model
+            # Solve
+            solver = PULP_CBC_CMD(msg=0)
             status = self.model.solve(solver)
 
-            # Check if we got a valid solution
-            if status == LpStatusOptimal:
+            # Extract solution if solved
+            if status >= 0:
                 solution = []
-                for exam in range(self.problem.number_of_exams):
-                    # Check if solution is valid
-                    exam_time_val = value(self.exam_time[exam])
-                    exam_room_val = value(self.exam_room[exam])
-                    if exam_time_val is not None and exam_room_val is not None:
-                        solution.append({
-                            'examId': exam,
-                            'room': int(exam_room_val),
-                            'timeSlot': int(exam_time_val)
-                        })
-                    else:
-                        return None  # Invalid solution
-                return solution if solution else None
+                for e in range(self.problem.number_of_exams):
+                    found = False
+                    for r in range(self.problem.number_of_rooms):
+                        for t in range(self.problem.number_of_slots):
+                            if value(self.exam_assignment[(e, r, t)]) > 0.5:
+                                solution.append({
+                                    'examId': e,
+                                    'room': r,
+                                    'timeSlot': t
+                                })
+                                found = True
+                                break
+                        if found:
+                            break
+                    if not found:
+                        return None
+
+                return solution if len(solution) == self.problem.number_of_exams else None
+
             return None
 
         except Exception as e:
             print(f"CBC Solver error: {str(e)}")
             return None
+
