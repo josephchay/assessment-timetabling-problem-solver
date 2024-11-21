@@ -1,57 +1,13 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple, Optional, Dict, Set
+from typing import List, Tuple, Optional, Dict, Set, Any
 from z3 import *
 import re
 import time as time_module
 
 from gui import timetablinggui
-
-
-# Domain Models
-@dataclass
-class Room:
-    """Represents a room with its capacity"""
-    id: int
-    capacity: int
-
-
-@dataclass
-class TimeSlot:
-    """Represents a time slot"""
-    id: int
-
-
-@dataclass
-class Exam:
-    """Represents an exam with its assigned students"""
-    id: int
-    students: Set[int]
-
-    def get_student_count(self) -> int:
-        return len(self.students)
-
-
-@dataclass
-class SchedulingProblem:
-    """Represents a complete scheduling problem instance"""
-    rooms: List[Room]
-    time_slots: List[TimeSlot]
-    exams: List[Exam]
-    total_students: int
-
-    @property
-    def number_of_rooms(self) -> int:
-        return len(self.rooms)
-
-    @property
-    def number_of_slots(self) -> int:
-        return len(self.time_slots)
-
-    @property
-    def number_of_exams(self) -> int:
-        return len(self.exams)
+from utilities import SchedulingProblem, Room, TimeSlot, Exam
+from visualization import TimetableAnalyzer
 
 
 class IConstraint(ABC):
@@ -79,8 +35,7 @@ class BasicRangeConstraint(IConstraint):
 class RoomConflictConstraint(IConstraint):
     """Constraint 2: At most one exam per room per time slot"""
 
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
+    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
         for e1 in range(problem.number_of_exams):
             for e2 in range(e1 + 1, problem.number_of_exams):
                 solver.add(
@@ -110,8 +65,7 @@ class RoomCapacityConstraint(IConstraint):
 class NoConsecutiveSlotsConstraint(IConstraint):
     """Constraint 4: No consecutive slots for same student"""
 
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
+    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
         for student in range(problem.total_students):
             student_exams = [
                 exam.id for exam in problem.exams
@@ -128,8 +82,7 @@ class NoConsecutiveSlotsConstraint(IConstraint):
 class MaxExamsPerSlotConstraint(IConstraint):
     """Additional: Limit concurrent exams per slot"""
 
-    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef],
-              exam_room: List[ArithRef]) -> None:
+    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
         max_concurrent = 3
         for t in range(problem.number_of_slots):
             concurrent_exams = Sum([If(exam_time[e] == t, 1, 0)
@@ -155,7 +108,7 @@ class ExamSchedulerSolver:
             MaxExamsPerSlotConstraint()
         ]
 
-    def solve(self) -> Optional[str]:
+    def solve(self) -> list[dict[str, int | Any]]:
         """Apply constraints and solve the scheduling problem"""
         # Apply all constraints
         for constraint in self.constraints:
@@ -168,12 +121,15 @@ class ExamSchedulerSolver:
         # Get solution
         model = self.solver.model()
         solution = []
-        for exam in range(self.problem.number_of_exams):
-            room = model[self.exam_room[exam]].as_long()
-            time = model[self.exam_time[exam]].as_long()
-            solution.append(f"Exam {exam}: Room {room}, Time slot {time}")
 
-        return "\n".join(solution)
+        for exam in range(self.problem.number_of_exams):
+            solution.append({
+                'examId': exam,
+                'room': model[self.exam_room[exam]].as_long(),
+                'timeSlot': model[self.exam_time[exam]].as_long()
+            })
+
+        return solution
 
 
 class ProblemFileReader:
@@ -230,6 +186,16 @@ class ProblemFileReader:
             )
 
 
+def format_solution(solution: List[dict]) -> str:
+    """Format solution data into a string"""
+    formatted_lines = []
+    for exam_data in solution:
+        formatted_lines.append(
+            f"Exam {exam_data['examId']}: Room {exam_data['room']}, Time slot {exam_data['timeSlot']}"
+        )
+    return "\n".join(formatted_lines)
+
+
 class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
     def __init__(self):
         super().__init__()
@@ -276,7 +242,7 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         self.results_notebook.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
 
         # Configure tab width and height
-        self.results_notebook._segmented_button.configure(width=400)  # Wider tabs
+        self.results_notebook._segmented_button.configure(width=400)
 
         # Create tabs
         self.all_tab = self.results_notebook.add("All")
@@ -329,6 +295,12 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         # Create status label
         self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
         self.status_label.grid(row=2, column=0, padx=20, pady=10)
+
+    def show_visualization(self, solution):
+        """Show visualization in a separate window"""
+        if solution:
+            analyzer = TimetableAnalyzer(self.current_problem)
+            analyzer.create_visualization(solution)
 
     def select_folder(self):
         """Open folder selection dialog"""
@@ -421,14 +393,13 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
     def run_scheduler(self):
         """Run the scheduler on all test files"""
         if not self.tests_dir:
-            self.status_label.configure(text="Please select a test instances folder before proceeding.")
+            self.status_label.configure(text="Please select a test instances folder first.")
             return
 
         start = time_module.time()
-        sat_results = []  # Store results for satisfiable instances
-        unsat_results = []  # Store results for unsatisfiable instances
+        sat_results = []
+        unsat_results = []
 
-        # Get and sort test files
         test_files = sorted(
             [f for f in self.tests_dir.iterdir() if f.name != ".idea"],
             key=lambda x: int(re.search(r'\d+', x.stem).group() or 0)
@@ -443,13 +414,18 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
 
                 # Read and solve problem
                 problem = ProblemFileReader.read_file(str(test_file))
+                self.current_problem = problem  # Store current problem
                 scheduler = ExamSchedulerSolver(problem)
                 solution = scheduler.solve()
+                print(solution)
+                # Show visualization for the solution
+                if solution:
+                    self.show_visualization(solution)
 
-                # Format results
+                # Format results for display
                 instance_result = [f"Instance: {test_file.name}"]
                 if solution:
-                    instance_result.extend(["sat", solution])
+                    instance_result.extend(["sat", format_solution(solution)])
                     sat_results.append(instance_result)
                 else:
                     instance_result.append("unsat")
@@ -462,7 +438,6 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         # Create/update tables with results
         self.create_tables(sat_results, unsat_results)
 
-        # Print final timing
         elapsed = int((time_module.time() - start) * 1000)
         self.status_label.configure(text=f"Completed! Time: {elapsed}ms")
         self.progressbar.set(1.0)
