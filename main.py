@@ -296,6 +296,8 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
         self.status_label.grid(row=2, column=0, padx=20, pady=10)
 
+        self.current_solution = None
+
     def show_visualization(self, solution):
         """Show visualization in a separate window"""
         if solution:
@@ -322,18 +324,32 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
             self.text_view_button.configure(fg_color="gray40")
             self.table_view_button.configure(fg_color="transparent")
 
-    def create_instance_frame(self, parent, instance_name, data):
-        """Create a frame for an instance with its table"""
+    def create_instance_frame(self, parent, instance_name, data, solution=None, problem=None):
+        """Create a frame for an instance with its table and view button"""
         instance_frame = timetablinggui.GUIFrame(parent)
         instance_frame.pack(fill="x", padx=10, pady=5)
 
+        # Create header frame to contain label and view button
+        header_frame = timetablinggui.GUIFrame(instance_frame)
+        header_frame.pack(fill="x", padx=5, pady=5)
+
         # Instance header
         instance_label = timetablinggui.GUILabel(
-            instance_frame,
+            header_frame,
             text=f"Instance: {instance_name}",
             font=timetablinggui.GUIFont(size=12, weight="bold")
         )
-        instance_label.pack(pady=5)
+        instance_label.pack(side="left", pady=5)
+
+        # Add view button if solution exists
+        if solution:
+            view_button = timetablinggui.GUIButton(
+                header_frame,
+                text="View",
+                width=60,
+                command=lambda: self.show_visualization(solution)
+            )
+            view_button.pack(side="right", padx=5)
 
         # Create table
         if data:
@@ -375,18 +391,27 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
                     time = room_time[1].split(' ')[2]
                     table_data.append([exam, room, time])
 
-            # Create instance frames in both SAT tab and All tab
-            self.create_instance_frame(self.sat_scroll, instance_name, table_data)
-            self.create_instance_frame(self.all_scroll, instance_name, table_data)
+            # Create instance frames with solution data
+            self.create_instance_frame(
+                self.sat_scroll,
+                instance_name,
+                table_data,
+                solution=self.current_solution
+            )
+            self.create_instance_frame(
+                self.all_scroll,
+                instance_name,
+                table_data,
+                solution=self.current_solution
+            )
 
-        # Process UNSAT results with same format as SAT
+        # Process UNSAT results
         for instance_data in unsat_results:
             if len(instance_data) >= 2:
                 instance_name = instance_data[0].split(': ')[1]
-                # Create empty table data (or you could put "No solution" in the cells)
                 table_data = [["N/A", "N/A", "N/A"]]
 
-                # Create instance frames in both UNSAT tab and All tab
+                # Create instance frames without solution data
                 self.create_instance_frame(self.unsat_scroll, instance_name, table_data)
                 self.create_instance_frame(self.all_scroll, instance_name, table_data)
 
@@ -417,9 +442,10 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
                 self.current_problem = problem  # Store current problem
                 scheduler = ExamSchedulerSolver(problem)
                 solution = scheduler.solve()
-                print(solution)
+
                 # Show visualization for the solution
                 if solution:
+                    self.current_solution = solution
                     self.show_visualization(solution)
 
                 # Format results for display
@@ -463,4 +489,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
