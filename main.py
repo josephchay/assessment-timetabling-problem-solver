@@ -1,10 +1,15 @@
 from pathlib import Path
+
+from typing import List, Dict, Set, Any
+from z3 import *
 import re
 import time as time_module
 
 from filesystem import ProblemFileReader
 from gui import timetablinggui
 from solvers import ZThreeSolver
+from utilities import SchedulingProblem, Room, TimeSlot, Exam
+from visualization import TimetableAnalyzer
 
 
 class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
@@ -53,7 +58,7 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         self.results_notebook.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
 
         # Configure tab width and height
-        self.results_notebook._segmented_button.configure(width=400)  # Wider tabs
+        self.results_notebook._segmented_button.configure(width=400)
 
         # Create tabs
         self.all_tab = self.results_notebook.add("All")
@@ -107,6 +112,14 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
         self.status_label.grid(row=2, column=0, padx=20, pady=10)
 
+        self.current_solution = None
+        self.solutions = {}
+
+    def show_visualization(self, solution):
+        """Show visualization in a separate window"""
+        if solution:
+            analyzer = TimetableAnalyzer(self.current_problem)
+
     def select_folder(self):
         """Open folder selection dialog"""
         folder = timetablinggui.filedialog.askdirectory(title="Select Tests Directory")
@@ -127,22 +140,55 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
             self.text_view_button.configure(fg_color="gray40")
             self.table_view_button.configure(fg_color="transparent")
 
-    def create_instance_frame(self, parent, instance_name, data):
-        """Create a frame for an instance with its table"""
+    def create_instance_frame(self, parent, instance_name, data, solution=None, problem=None):
+        """Create a frame for an instance with its table and view button"""
         instance_frame = timetablinggui.GUIFrame(parent)
         instance_frame.pack(fill="x", padx=10, pady=5)
 
+        # Create header frame to contain label and buttons
+        header_frame = timetablinggui.GUIFrame(instance_frame)
+        header_frame.pack(fill="x", padx=5, pady=5)
+
         # Instance header
         instance_label = timetablinggui.GUILabel(
-            instance_frame,
+            header_frame,
             text=f"Instance: {instance_name}",
             font=timetablinggui.GUIFont(size=12, weight="bold")
         )
-        instance_label.pack(pady=5)
+        instance_label.pack(side="left", pady=5)
+
+        # Add view button and visualization menu if solution exists
+        if solution is not None:
+            button_frame = timetablinggui.GUIFrame(header_frame)
+            button_frame.pack(side="right", padx=5)
+
+            # Create menu first (it will be hidden initially)
+            visualization_menu = timetablinggui.GUIOptionMenu(
+                button_frame,
+                values=[
+                    "Select Visualization",
+                    "Room Utilization",
+                    "Time Distribution",
+                    "Student Spread",
+                    "Timetable Heatmap"
+                ],
+                command=lambda choice, s=solution, p=problem: self.show_selected_visualization(choice, s, p, instance_name)
+            )
+
+            # Create view button
+            view_button = timetablinggui.GUIButton(
+                button_frame,
+                text="View Statistics",
+                width=60,
+                command=lambda m=visualization_menu: self.toggle_visualization_menu(m)
+            )
+            view_button.pack(side="top", pady=(0, 5))
+            visualization_menu.pack(side="top")
+            visualization_menu.pack_forget()  # Hide menu initially
 
         # Create table
         if data:
-            values = [self.sat_headers] + data  # Using same headers for both SAT and UNSAT
+            values = [self.sat_headers] + data
             table = timetablinggui.TableManager(
                 master=instance_frame,
                 row=len(values),
@@ -155,6 +201,28 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
 
         return instance_frame
 
+    def toggle_visualization_menu(self, menu):
+        """Toggle the visualization menu visibility"""
+        if menu.winfo_viewable():
+            menu.pack_forget()
+        else:
+            # Hide all other menus first
+            for widget in self.winfo_children():
+                if isinstance(widget, timetablinggui.GUIOptionMenu):
+                    widget.pack_forget()
+            menu.pack(side="top")
+
+    def show_selected_visualization(self, choice: str, solution: List[dict], problem: SchedulingProblem, instance_name: str):
+        """Show the selected visualization"""
+        if choice != "Select Visualization":  # Only proceed if a real choice was made
+            analyzer = TimetableAnalyzer(problem, solution)
+            analyzer.create_graph_window(choice, instance_name)
+
+            # Hide all menus after selection
+            for widget in self.winfo_children():
+                if isinstance(widget, timetablinggui.GUIOptionMenu):
+                    widget.pack_forget()
+
     def create_tables(self, sat_results, unsat_results):
         """Create tables for all results"""
         # Clear existing content
@@ -163,49 +231,70 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
                 widget.destroy()
 
         # Process SAT results
-        for instance_data in sat_results:
-            if not instance_data:
-                continue
-
-            instance_name = instance_data[0].split(': ')[1]
-            solution_lines = instance_data[2].split('\n')
-
+        for result in sat_results:
             # Process solution data
             table_data = []
-            for line in solution_lines:
+            for line in result['formatted_solution'].split('\n'):
                 if line.strip():
-                    exam = line.split(': ')[0]
+                    exam = line.split(': ')[0].replace("Exam", "")
                     room_time = line.split(': ')[1].split(', ')
                     room = room_time[0].split(' ')[1]
                     time = room_time[1].split(' ')[2]
                     table_data.append([exam, room, time])
 
-            # Create instance frames in both SAT tab and All tab
-            self.create_instance_frame(self.sat_scroll, instance_name, table_data)
-            self.create_instance_frame(self.all_scroll, instance_name, table_data)
+            # Create instance frames with solution data
+            self.create_instance_frame(
+                self.sat_scroll,
+                result['instance_name'],
+                table_data,
+                solution=result['solution'],
+                problem=result['problem']
+            )
+            self.create_instance_frame(
+                self.all_scroll,
+                result['instance_name'],
+                table_data,
+                solution=result['solution'],
+                problem=result['problem']
+            )
 
-        # Process UNSAT results with same format as SAT
-        for instance_data in unsat_results:
-            if len(instance_data) >= 2:
-                instance_name = instance_data[0].split(': ')[1]
-                # Create empty table data (or you could put "No solution" in the cells)
-                table_data = [["N/A", "N/A", "N/A"]]
+        # Process UNSAT results
+        for result in unsat_results:
+            table_data = [["N/A", "N/A", "N/A"]]
 
-                # Create instance frames in both UNSAT tab and All tab
-                self.create_instance_frame(self.unsat_scroll, instance_name, table_data)
-                self.create_instance_frame(self.all_scroll, instance_name, table_data)
+            # Create instance frames without solution data
+            self.create_instance_frame(
+                self.unsat_scroll,
+                result['instance_name'],
+                table_data
+            )
+            self.create_instance_frame(
+                self.all_scroll,
+                result['instance_name'],
+                table_data
+            )
+
+    @staticmethod
+    def format_solution(solution: List[dict]) -> str:
+        """Format solution data into a string"""
+        formatted_lines = []
+        for exam_data in solution:
+            formatted_lines.append(
+                f"Exam {exam_data['examId']}: Room {exam_data['room']}, Time slot {exam_data['timeSlot']}"
+            )
+        return "\n".join(formatted_lines)
 
     def run_scheduler(self):
         """Run the scheduler on all test files"""
         if not self.tests_dir:
-            self.status_label.configure(text="Please select a test instances folder before proceeding.")
+            self.status_label.configure(text="Please select a test instances folder first.")
             return
 
         start = time_module.time()
-        sat_results = []  # Store results for satisfiable instances
-        unsat_results = []  # Store results for unsatisfiable instances
+        sat_results = []
+        unsat_results = []
+        self.solutions = {}  # Clear previous solutions
 
-        # Get and sort test files
         test_files = sorted(
             [f for f in self.tests_dir.iterdir() if f.name != ".idea"],
             key=lambda x: int(re.search(r'\d+', x.stem).group() or 0)
@@ -224,23 +313,30 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
                 scheduler = ZThreeSolver(problem)
                 solution = scheduler.solve()
 
-                # Format results
-                instance_result = [f"Instance: {test_file.name}"]
+                # Format results for display
                 if solution:
-                    instance_result.extend(["sat", solution])
-                    sat_results.append(instance_result)
+                    formatted_solution = self.format_solution(solution)
+                    sat_results.append({
+                        'instance_name': test_file.stem,
+                        'solution': solution,
+                        'problem': problem,
+                        'formatted_solution': formatted_solution
+                    })
                 else:
-                    instance_result.append("unsat")
-                    unsat_results.append(instance_result)
+                    unsat_results.append({
+                        'instance_name': test_file.stem
+                    })
 
             except Exception as e:
                 error_message = f"Error processing {test_file.name}: {str(e)}"
-                unsat_results.append([f"Instance: {test_file.name}", "error", error_message])
+                unsat_results.append({
+                    'instance_name': test_file.name,
+                    'error': error_message
+                })
 
         # Create/update tables with results
         self.create_tables(sat_results, unsat_results)
 
-        # Print final timing
         elapsed = int((time_module.time() - start) * 1000)
         self.status_label.configure(text=f"Completed! Time: {elapsed}ms")
         self.progressbar.set(1.0)
@@ -266,4 +362,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

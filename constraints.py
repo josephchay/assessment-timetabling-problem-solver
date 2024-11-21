@@ -1,8 +1,17 @@
+from abc import ABC, abstractmethod
 from z3 import *
 from typing import List
 
-from utilities.abstracts import IConstraint
-from utilities.typehints import SchedulingProblem
+from utilities import SchedulingProblem
+
+
+class IConstraint(ABC):
+    """Interface for exam scheduling constraints"""
+
+    @abstractmethod
+    def apply(self, solver: Solver, problem: SchedulingProblem, exam_time: List[ArithRef], exam_room: List[ArithRef]) -> None:
+        """Apply the constraint to the solver"""
+        pass
 
 
 class BasicRangeConstraint(IConstraint):

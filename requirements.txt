@@ -1,1 +1,4 @@
 z3-solver==4.13.3.0
+matplotlib
+seaborn
+numpy

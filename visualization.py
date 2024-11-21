@@ -10,8 +10,8 @@ from typing import List
 
 from gui import timetablinggui
 
-from utilities.metrics import MetricsAnalyzer
-from utilities.typehints import SchedulingProblem
+from utilities import MetricsAnalyzer
+from utilities import SchedulingProblem
 
 
 class TimetableAnalyzer:
