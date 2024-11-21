@@ -330,7 +330,7 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         instance_frame = timetablinggui.GUIFrame(parent)
         instance_frame.pack(fill="x", padx=10, pady=5)
 
-        # Create header frame to contain label and view button
+        # Create header frame to contain label and buttons
         header_frame = timetablinggui.GUIFrame(instance_frame)
         header_frame.pack(fill="x", padx=5, pady=5)
 
@@ -342,15 +342,29 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
         )
         instance_label.pack(side="left", pady=5)
 
-        # Add view button if solution exists
+        # Add view button and visualization menu if solution exists
         if solution is not None:
+            button_frame = timetablinggui.GUIFrame(header_frame)
+            button_frame.pack(side="right", padx=5)
+
+            # Create menu first (it will be hidden initially)
+            visualization_menu = timetablinggui.GUIOptionMenu(
+                button_frame,
+                values=["Room Utilization", "Time Distribution",
+                        "Student Spread", "Timetable Heatmap"],
+                command=lambda choice, s=solution, p=problem: self.show_selected_visualization(choice, s, p)
+            )
+
+            # Create view button
             view_button = timetablinggui.GUIButton(
-                header_frame,
+                button_frame,
                 text="View",
                 width=60,
-                command=lambda s=solution: self.show_visualization_menu(header_frame, s, problem)
+                command=lambda m=visualization_menu: self.toggle_visualization_menu(m)
             )
-            view_button.pack(side="right", padx=5)
+            view_button.pack(side="top", pady=(0, 5))
+            visualization_menu.pack(side="top")
+            visualization_menu.pack_forget()  # Hide menu initially
 
         # Create table
         if data:
@@ -367,22 +381,27 @@ class ExamSchedulerGUI(timetablinggui.TimetablingGUI):
 
         return instance_frame
 
-    def show_visualization_menu(self, parent_widget, solution, problem):
-        """Show a menu of visualization options"""
-        menu = timetablinggui.GUIOptionMenu(
-            parent_widget,
-            values=["Room Utilization", "Time Distribution",
-                   "Student Spread", "Timetable Heatmap"],
-            command=lambda choice: self.show_selected_visualization(choice, solution, problem)
-        )
-        menu.set("Select Visualization")
-        menu.place(relx=1, rely=0, anchor="ne")
+    def toggle_visualization_menu(self, menu):
+        """Toggle the visualization menu visibility"""
+        if menu.winfo_viewable():
+            menu.pack_forget()
+        else:
+            # Hide all other menus first
+            for widget in self.winfo_children():
+                if isinstance(widget, timetablinggui.GUIOptionMenu):
+                    widget.pack_forget()
+            menu.pack(side="top")
 
-    @staticmethod
-    def show_selected_visualization(choice: str, solution: List[dict], problem: SchedulingProblem):
+    def show_selected_visualization(self, choice: str, solution: List[dict], problem: SchedulingProblem):
         """Show the selected visualization"""
-        analyzer = TimetableAnalyzer(problem, solution)
-        analyzer.create_graph_window(choice)
+        if choice != "Select Visualization":  # Only proceed if a real choice was made
+            analyzer = TimetableAnalyzer(problem, solution)
+            analyzer.create_graph_window(choice)
+
+            # Hide all menus after selection
+            for widget in self.winfo_children():
+                if isinstance(widget, timetablinggui.GUIOptionMenu):
+                    widget.pack_forget()
 
     def create_tables(self, sat_results, unsat_results):
         """Create tables for all results"""
