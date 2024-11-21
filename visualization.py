@@ -1,103 +1,98 @@
 import matplotlib
-
 matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import tkinter as tk
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from typing import List
+
+from gui import timetablinggui
+
 from metrics import MetricsAnalyzer
 from utilities import SchedulingProblem
 
 
 class TimetableAnalyzer:
-    def __init__(self, problem: SchedulingProblem):
+    def __init__(self, problem: SchedulingProblem, solution: List[dict]):
         self.problem = problem
+        self.solution = solution
         self.metrics_analyzer = MetricsAnalyzer(problem)
+        self.metrics = self.metrics_analyzer.calculate_metrics(solution)
 
-    def create_visualization(self, solution: List[dict]) -> None:
-        metrics = self.metrics_analyzer.calculate_metrics(solution)
-
-        # Create a new window
+    def create_graph_window(self, graph_type: str) -> None:
+        """Create a window showing a specific graph type"""
         window = tk.Toplevel()
-        window.title("Timetable Analysis")
-        window.geometry("1200x800")
+        window.title(f"Timetable Analysis - {graph_type}")
+        window.geometry("600x400")
 
-        # Create figure with subplots
-        fig = Figure(figsize=(12, 8))
+        fig = Figure(figsize=(10, 6))
+        ax = fig.add_subplot(111)
 
-        # Room Utilization
-        ax1 = fig.add_subplot(221)
-        self._plot_room_utilization(ax1, metrics)
+        if graph_type == "Room Utilization":
+            self._plot_room_utilization(ax)
+        elif graph_type == "Time Distribution":
+            self._plot_time_distribution(ax)
+        elif graph_type == "Student Spread":
+            self._plot_student_spread(ax)
+        elif graph_type == "Timetable Heatmap":
+            self._plot_timetable_heatmap(ax)
 
-        # Time Distribution
-        ax2 = fig.add_subplot(222)
-        self._plot_time_distribution(ax2, metrics)
-
-        # Student Spread
-        ax3 = fig.add_subplot(223)
-        self._plot_student_spread(ax3, metrics)
-
-        # Timetable Heatmap
-        ax4 = fig.add_subplot(224)
-        self._plot_timetable_heatmap(ax4, solution)
-
-        # Create canvas
         canvas = FigureCanvasTkAgg(fig, master=window)
         canvas.draw()
-        canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Add summary statistics
-        summary_frame = tk.Frame(window)
-        summary_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=5)
+        # Add summary statistics relevant to this graph
+        summary_frame = timetablinggui.GUIFrame(window)
+        summary_frame.pack(fill=tk.X, padx=10, pady=5)
 
-        summary_text = (
-            f"Average Room Utilization: {metrics.average_room_utilization:.2f}%\n"
-            f"Average Exams per Time Slot: {metrics.average_exams_per_slot:.2f}\n"
-            f"Average Student Spread: {metrics.average_student_spread:.2f} slots"
-        )
-        summary_label = tk.Label(summary_frame, text=summary_text, justify=tk.LEFT)
+        if graph_type == "Room Utilization":
+            stat_text = f"Average Room Utilization: {self.metrics.average_room_utilization:.2f}%"
+        elif graph_type == "Time Distribution":
+            stat_text = f"Average Exams per Time Slot: {self.metrics.average_exams_per_slot:.2f}"
+        elif graph_type == "Student Spread":
+            stat_text = f"Average Student Spread: {self.metrics.average_student_spread:.2f} slots"
+        else:
+            stat_text = "Timetable Distribution Overview"
+
+        summary_label = timetablinggui.GUILabel(summary_frame, text=stat_text)
         summary_label.pack(side=tk.LEFT)
 
-        fig.tight_layout()
-
-    def _plot_room_utilization(self, ax, metrics):
-        rooms = list(metrics.room_utilization.keys())
-        utilizations = list(metrics.room_utilization.values())
+    def _plot_room_utilization(self, ax):
+        rooms = list(self.metrics.room_utilization.keys())
+        utilizations = list(self.metrics.room_utilization.values())
 
         ax.bar(rooms, utilizations)
         ax.set_title('Room Utilization')
         ax.set_xlabel('Room ID')
         ax.set_ylabel('Utilization (%)')
-        ax.axhline(y=metrics.average_room_utilization, color='r', linestyle='--', label='Average')
+        ax.axhline(y=self.metrics.average_room_utilization, color='r', linestyle='--', label='Average')
         ax.legend()
 
-    def _plot_time_distribution(self, ax, metrics):
-        slots = list(metrics.time_distribution.keys())
-        counts = list(metrics.time_distribution.values())
+    def _plot_time_distribution(self, ax):
+        slots = list(self.metrics.time_distribution.keys())
+        counts = list(self.metrics.time_distribution.values())
 
         ax.plot(slots, counts, marker='o')
         ax.set_title('Exam Distribution Across Time Slots')
         ax.set_xlabel('Time Slot')
         ax.set_ylabel('Number of Exams')
-        ax.axhline(y=metrics.average_exams_per_slot, color='r', linestyle='--', label='Average')
+        ax.axhline(y=self.metrics.average_exams_per_slot, color='r', linestyle='--', label='Average')
         ax.legend()
 
-    def _plot_student_spread(self, ax, metrics):
-        spreads = list(metrics.student_spread.keys())
-        counts = list(metrics.student_spread.values())
+    def _plot_student_spread(self, ax):
+        spreads = list(self.metrics.student_spread.keys())
+        counts = list(self.metrics.student_spread.values())
 
         ax.bar(spreads, counts)
         ax.set_title('Student Exam Spread Distribution')
         ax.set_xlabel('Spread (slots)')
         ax.set_ylabel('Number of Students')
 
-    def _plot_timetable_heatmap(self, ax, solution):
+    def _plot_timetable_heatmap(self, ax):
         grid = np.full((self.problem.number_of_slots, self.problem.number_of_rooms), np.nan)
 
-        for exam_data in solution:
+        for exam_data in self.solution:
             exam = self.problem.exams[exam_data['examId']]
             grid[exam_data['timeSlot']][exam_data['room']] = exam.get_student_count()
 
