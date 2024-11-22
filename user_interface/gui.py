@@ -291,15 +291,15 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 self.sat_scroll,
                 result['instance_name'],
                 table_data,
-                solution=result['solution'],
-                problem=result['problem']
+                solution=result.get('solution'),
+                problem=result.get('problem')
             )
             self.create_instance_frame(
                 self.all_scroll,
                 result['instance_name'],
                 table_data,
-                solution=result['solution'],
-                problem=result['problem']
+                solution=result.get('solution'),
+                problem=result.get('problem')
             )
 
         # Process UNSAT results
@@ -354,12 +354,13 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.clear_results()
 
         comparison_results = []
+        unsat_results = []
         total_solution_time = 0
 
-        # Only process sat files
+        # Process both sat and unsat files
         test_files = sorted(
             [f for f in self.tests_dir.iterdir()
-             if f.name.startswith('sat') and f.name != ".idea"],
+             if (f.name.startswith('sat') or f.name.startswith('unsat')) and f.name != ".idea"],
             key=lambda x: int(re.search(r'\d+', x.stem).group() or 0)
         )
 
@@ -388,21 +389,27 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                     time2 = int((time_module.time() - start_time2) * 1000)
                     total_solution_time += time2
 
-                    # Store comparison results
-                    comparison_results.append({
-                        'instance_name': test_file.stem,
-                        'solver1': {
-                            'name': solver1,
-                            'solution': solution1,
-                            'time': time1
-                        },
-                        'solver2': {
-                            'name': solver2,
-                            'solution': solution2,
-                            'time': time2
-                        },
-                        'problem': problem
-                    })
+                    if solution1 is None and solution2 is None:
+                        unsat_results.append({
+                            'instance_name': test_file.stem,
+                            'formatted_solution': "N/A"
+                        })
+                    else:
+                        # Store comparison results
+                        comparison_results.append({
+                            'instance_name': test_file.stem,
+                            'solver1': {
+                                'name': solver1,
+                                'solution': solution1,
+                                'time': time1
+                            },
+                            'solver2': {
+                                'name': solver2,
+                                'solution': solution2,
+                                'time': time2
+                            },
+                            'problem': problem
+                        })
                 else:
                     # Single solver mode
                     if solution1:
@@ -413,6 +420,11 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                             'problem': problem,
                             'formatted_solution': formatted_solution,
                             'time': time1
+                        })
+                    else:
+                        unsat_results.append({
+                            'instance_name': test_file.stem,
+                            'formatted_solution': "N/A"
                         })
 
             except Exception as e:
@@ -426,14 +438,20 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             print(f"\nProcessing comparison between {solver1} and {solver2}")
             print(f"Number of results to compare: {len(comparison_results)}")
             # Force update the display
+            self.results_notebook.set("All")
+            # Clear existing content
+            for widget in self.all_scroll.winfo_children():
+                widget.destroy()
             self.update()
+
+            # Create comparison table
             self.create_comparison_table(comparison_results)
         else:
-            self.create_tables(comparison_results, [])
+            self.create_tables(comparison_results, unsat_results)
 
         formatted_final_time = format_elapsed_time(total_solution_time)
         self.status_label.configure(
-            text=f"Completed! Processed {len(comparison_results)} instances in {formatted_final_time}"
+            text=f"Completed! Processed {len(comparison_results) + len(unsat_results)} instances in {formatted_final_time}"
         )
         # Force final update
         self.update()
@@ -457,13 +475,28 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
 
     def create_comparison_table(self, results):
         """Create comparison table focusing on key scheduling metrics"""
+        print("Starting comparison table creation...")
+        print(f"Number of results to process: {len(results)}")
+
         # Clear existing content
         for scroll in [self.all_scroll]:
             for widget in scroll.winfo_children():
                 widget.destroy()
 
+        if not results:
+            print("No results to display!")
+            # Display a message in the UI when there are no results
+            no_results_label = timetablinggui.GUILabel(
+                self.all_scroll,
+                text="No results to display",
+                font=timetablinggui.GUIFont(size=14)
+            )
+            no_results_label.pack(padx=20, pady=20)
+            return
+
         solver1_name = results[0]['solver1']['name']
         solver2_name = results[0]['solver2']['name']
+        print(f"Comparing {solver1_name} vs {solver2_name}")
 
         # Track statistics
         solver1_wins = 0
@@ -487,7 +520,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             "Time Spread",
             "Stu. Gaps",
             "Room Bal.",
-            "Quality"  # Shortened from Ovl. Quality
+            "Quality"
         ]
 
         comparison_data = []
@@ -499,62 +532,121 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 time1 = result['solver1']['time']
                 time2 = result['solver2']['time']
 
-                # Track times
-                solver1_times.append(time1)
-                solver2_times.append(time2)
+                print(f"Processing result for {result['instance_name']}")
+                print(f"Solution1 exists: {solution1 is not None}")
+                print(f"Solution2 exists: {solution2 is not None}")
+
+                # Track times only if solutions exist
+                if solution1 is not None:
+                    solver1_times.append(time1)
+                if solution2 is not None:
+                    solver2_times.append(time2)
 
                 metrics1 = self._calculate_detailed_metrics(solution1, problem)
                 metrics2 = self._calculate_detailed_metrics(solution2, problem)
 
-                # Update statistics based on comparisons
-                room_usage_comp = self._format_comparison(metrics1['room_usage'], metrics2['room_usage'])
-                if "S1" in room_usage_comp:
-                    solver1_better_room += 1
-                elif "S2" in room_usage_comp:
-                    solver2_better_room += 1
-                else:
-                    equal_room += 1
-
-                student_gaps_comp = self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps'])
-                if "S1" in student_gaps_comp:
-                    solver1_better_student += 1
-                elif "S2" in student_gaps_comp:
-                    solver2_better_student += 1
-                else:
-                    equal_student += 1
-
-                overall_comp = self._determine_overall_winner(metrics1, metrics2, time1, time2)
-                if "S1" in overall_comp:
-                    solver1_wins += 1
-                elif "S2" in overall_comp:
+                # If both solutions are None (UNSAT), show special row
+                if solution1 is None and solution2 is None:
+                    row_data = [
+                        result['instance_name'],
+                        "UNSAT",
+                        "UNSAT",
+                        "N/A",
+                        "N/A",
+                        "N/A",
+                        "N/A",
+                        "Both UNSAT"
+                    ]
+                # If one solution is None, show which solver found a solution
+                elif solution1 is None:
+                    row_data = [
+                        result['instance_name'],
+                        "UNSAT",
+                        f"{time2}ms",
+                        "S2 only",
+                        "S2 only",
+                        "S2 only",
+                        "S2 only",
+                        "S2 (found solution)"
+                    ]
                     solver2_wins += 1
+                elif solution2 is None:
+                    row_data = [
+                        result['instance_name'],
+                        f"{time1}ms",
+                        "UNSAT",
+                        "S1 only",
+                        "S1 only",
+                        "S1 only",
+                        "S1 only",
+                        "S1 (found solution)"
+                    ]
+                    solver1_wins += 1
                 else:
-                    ties += 1
+                    # Both solutions exist, show normal comparison
+                    room_usage_comp = self._format_comparison(metrics1['room_usage'], metrics2['room_usage'])
+                    if "S1" in room_usage_comp:
+                        solver1_better_room += 1
+                    elif "S2" in room_usage_comp:
+                        solver2_better_room += 1
+                    else:
+                        equal_room += 1
 
-                row_data = [
-                    result['instance_name'],
-                    f"{time1}ms",
-                    f"{time2}ms",
-                    self._format_comparison(metrics1['room_usage'], metrics2['room_usage']),
-                    self._format_comparison(metrics1['time_spread'], metrics2['time_spread']),
-                    self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps']),
-                    self._format_comparison(metrics1['room_balance'], metrics2['room_balance']),
-                    overall_comp
-                ]
+                    student_gaps_comp = self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps'])
+                    if "S1" in student_gaps_comp:
+                        solver1_better_student += 1
+                    elif "S2" in student_gaps_comp:
+                        solver2_better_student += 1
+                    else:
+                        equal_student += 1
+
+                    overall_comp = self._determine_overall_winner(metrics1, metrics2, time1, time2)
+                    if "S1" in overall_comp:
+                        solver1_wins += 1
+                    elif "S2" in overall_comp:
+                        solver2_wins += 1
+                    else:
+                        ties += 1
+
+                    row_data = [
+                        result['instance_name'],
+                        f"{time1}ms",
+                        f"{time2}ms",
+                        room_usage_comp,
+                        self._format_comparison(metrics1['time_spread'], metrics2['time_spread']),
+                        student_gaps_comp,
+                        self._format_comparison(metrics1['room_balance'], metrics2['room_balance']),
+                        overall_comp
+                    ]
                 comparison_data.append(row_data)
 
             except Exception as e:
-                print(f"Error processing {result['instance_name']}: {str(e)}")
+                print(f"Error processing result {result['instance_name']}: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
+                # Add error row to comparison data
+                comparison_data.append([
+                    result['instance_name'],
+                    "Error",
+                    "Error",
+                    "N/A",
+                    "N/A",
+                    "N/A",
+                    "N/A",
+                    "Error"
+                ])
                 continue
+
+        print(f"Processed {len(comparison_data)} rows")
 
         # Calculate averages
         solver1_avg_time = sum(solver1_times) / len(solver1_times) if solver1_times else 0
         solver2_avg_time = sum(solver2_times) / len(solver2_times) if solver2_times else 0
 
-        # Determine overall winner (shortened format)
+        # Determine overall winner
         overall_winner = f"{solver2_name if solver2_wins > solver1_wins else solver1_name} ({max(solver1_wins, solver2_wins)})"
 
-        # Add summary row with more concise format
+        # Add summary row
         comparison_data.append([
             "SUMMARY",
             f"Avg: {solver1_avg_time:.1f}",
@@ -566,10 +658,15 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             overall_winner
         ])
 
+        print("Creating table widget...")
         try:
+            # Create a container frame
+            container_frame = timetablinggui.GUIFrame(self.all_scroll)
+            container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
             # Create table with adjusted column widths
             table = timetablinggui.TableManager(
-                master=self.all_scroll,
+                master=container_frame,
                 row=len(comparison_data) + 1,
                 column=len(headers),
                 values=[headers] + comparison_data,
@@ -577,33 +674,53 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 hover=True
             )
             table.pack(fill="both", expand=True, padx=10, pady=5)
+            print("Table widget created successfully")
 
             # Concise analysis text
             analysis_text = f"""
-                Performance Analysis:
-                • {solver1_name} vs {solver2_name}
-                • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
-                • Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)
-                • Room Usage: {solver1_better_room} vs {solver2_better_room} ({equal_room} equal)
-                • Student Gaps: {solver1_better_student} vs {solver2_better_student} ({equal_student} equal)
+                    Performance Analysis:
+                    • {solver1_name} vs {solver2_name}
+                    • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
+                    • Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)
+                    • Room Usage: {solver1_better_room} vs {solver2_better_room} ({equal_room} equal)
+                    • Student Gaps: {solver1_better_student} vs {solver2_better_student} ({equal_student} equal)
 
-                Metrics Guide:
-                • Room Usage: Higher % = better utilization
-                • Time Spread: Higher = better distribution
-                • Student Gaps: Higher = better exam spacing
-                • Room Balance: Higher = more consistent usage
-                • Quality: Combined score of all metrics
-                """
+                    Metrics Guide:
+                    • Room Usage: Higher % = better utilization
+                    • Time Spread: Higher = better distribution
+                    • Student Gaps: Higher = better exam spacing
+                    • Room Balance: Higher = more consistent usage
+                    • Quality: Combined score of all metrics
+                    """
             analysis_label = timetablinggui.GUILabel(
-                self.all_scroll,
+                container_frame,
                 text=analysis_text,
                 font=timetablinggui.GUIFont(size=12),
                 justify="left"
             )
             analysis_label.pack(fill="x", padx=10, pady=5)
+            print("Analysis label created successfully")
 
+            # Force updates at multiple levels
+            container_frame.update()
+            self.all_scroll.update()
+            self.update()
+
+            # Set focus to the All tab
+            self.results_notebook.set("All")
+            self.after(100, self.update)  # Schedule another update after a brief delay
         except Exception as e:
-            print(f"Error creating table: {str(e)}")
+            print(f"Error creating table widget: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            # Show error in UI
+            error_label = timetablinggui.GUILabel(
+                self.all_scroll,
+                text=f"Error creating comparison table: {str(e)}",
+                font=timetablinggui.GUIFont(size=12),
+                text_color="red"
+            )
+            error_label.pack(padx=20, pady=20)
 
     @staticmethod
     def _format_comparison(value1, value2, is_time=False):
@@ -666,6 +783,15 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
     @staticmethod
     def _calculate_detailed_metrics(solution, problem):
         """Calculate detailed metrics for a solution"""
+        # Return default metrics if solution is None (UNSAT case)
+        if solution is None:
+            return {
+                'room_usage': 0,
+                'time_spread': 0,
+                'student_gaps': 0,
+                'room_balance': 0
+            }
+
         metrics = {}
 
         try:
@@ -674,21 +800,28 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             for exam in solution:
                 room_id = exam['room']
                 room_capacity = problem.rooms[room_id].capacity
+                # Skip rooms with zero capacity or handle them specially
+                if room_capacity <= 0:
+                    continue
                 exam_size = problem.exams[exam['examId']].get_student_count()
                 usage = (exam_size / room_capacity) * 100
                 room_usage[room_id] = max(room_usage[room_id], usage)
 
             # Apply penalty for under-utilization
-            metrics['room_usage'] = sum(
+            # Only consider rooms with non-zero capacity
+            valid_rooms = [usage for rid, usage in room_usage.items()
+                           if problem.rooms[rid].capacity > 0]
+            metrics['room_usage'] = (sum(
                 usage if usage >= 80 else usage * 0.8
-                for usage in room_usage.values()
-            ) / len(room_usage) if room_usage else 0
+                for usage in valid_rooms
+            ) / len(valid_rooms)) if valid_rooms else 0
 
             # Time Spread calculation
             time_slots = [exam['timeSlot'] for exam in solution]
             slot_counts = Counter(time_slots)
             avg_exams = len(solution) / len(slot_counts) if slot_counts else 0
-            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(slot_counts) if slot_counts else 0
+            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(
+                slot_counts) if slot_counts else 0
             metrics['time_spread'] = min(100, 100 / (1 + variance))
 
             # Student Gaps
@@ -718,13 +851,17 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             room_loads = defaultdict(list)
             for exam in solution:
                 room_id = exam['room']
+                # Skip rooms with zero capacity
+                if problem.rooms[room_id].capacity <= 0:
+                    continue
                 exam_size = problem.exams[exam['examId']].get_student_count()
                 room_loads[room_id].append((exam_size / problem.rooms[room_id].capacity) * 100)
 
             balance_scores = []
-            for loads in room_loads.values():
-                avg_load = sum(loads) / len(loads)
-                balance_scores.append(100 - abs(90 - avg_load))  # 90% is optimal utilization
+            for room_id, loads in room_loads.items():
+                if problem.rooms[room_id].capacity > 0:
+                    avg_load = sum(loads) / len(loads)
+                    balance_scores.append(100 - abs(90 - avg_load))  # 90% is optimal utilization
 
             metrics['room_balance'] = sum(balance_scores) / len(balance_scores) if balance_scores else 0
 
