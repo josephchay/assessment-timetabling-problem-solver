@@ -350,6 +350,9 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 self.status_label.configure(text="Please select two different solvers to compare.")
                 return
 
+        # Clear existing results before starting
+        self.clear_results()
+
         comparison_results = []
         total_solution_time = 0
 
@@ -398,7 +401,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                             'solution': solution2,
                             'time': time2
                         },
-                        'problem': problem  # Include problem for quality comparison
+                        'problem': problem
                     })
                 else:
                     # Single solver mode
@@ -416,9 +419,14 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 print(f"Error processing {test_file.name}: {str(e)}")
                 continue
 
+        # Make sure we're showing the All tab
+        self.results_notebook.set("All")
+
         if self.comparison_mode_var.get():
             print(f"\nProcessing comparison between {solver1} and {solver2}")
             print(f"Number of results to compare: {len(comparison_results)}")
+            # Force update the display
+            self.update()
             self.create_comparison_table(comparison_results)
         else:
             self.create_tables(comparison_results, [])
@@ -427,6 +435,8 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.status_label.configure(
             text=f"Completed! Processed {len(comparison_results)} instances in {formatted_final_time}"
         )
+        # Force final update
+        self.update()
 
     @staticmethod
     def compare_solutions(solution1, solution2):
@@ -678,8 +688,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             time_slots = [exam['timeSlot'] for exam in solution]
             slot_counts = Counter(time_slots)
             avg_exams = len(solution) / len(slot_counts) if slot_counts else 0
-            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(
-                slot_counts) if slot_counts else 0
+            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(slot_counts) if slot_counts else 0
             metrics['time_spread'] = min(100, 100 / (1 + variance))
 
             # Student Gaps
