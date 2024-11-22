@@ -353,6 +353,10 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         # Clear existing results before starting
         self.clear_results()
 
+        # Force All tab selection and update before processing
+        self.results_notebook.set("All")
+        self.update_idletasks()
+
         comparison_results = []
         unsat_results = []
         total_solution_time = 0
@@ -426,26 +430,19 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                             'instance_name': test_file.stem,
                             'formatted_solution': "N/A"
                         })
-
             except Exception as e:
                 print(f"Error processing {test_file.name}: {str(e)}")
                 continue
 
-        # Make sure we're showing the All tab
-        self.results_notebook.set("All")
+        for widget in self.all_scroll.winfo_children():
+            widget.destroy()
 
         if self.comparison_mode_var.get():
             print(f"\nProcessing comparison between {solver1} and {solver2}")
             print(f"Number of results to compare: {len(comparison_results)}")
-            # Force update the display
-            self.results_notebook.set("All")
-            # Clear existing content
-            for widget in self.all_scroll.winfo_children():
-                widget.destroy()
-            self.update()
 
-            # Create comparison table
-            self.create_comparison_table(comparison_results)
+            # Schedule comparison table creation for next event loop cycle
+            self.after(100, lambda: self._create_comparison_table_safe(comparison_results))
         else:
             self.create_tables(comparison_results, unsat_results)
 
@@ -453,8 +450,6 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.status_label.configure(
             text=f"Completed! Processed {len(comparison_results) + len(unsat_results)} instances in {formatted_final_time}"
         )
-        # Force final update
-        self.update()
 
     @staticmethod
     def compare_solutions(solution1, solution2):
@@ -473,15 +468,50 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 "other_metric": "Comparison logic goes here"
             }
 
+    def _create_comparison_table_safe(self, results):
+        """Safe wrapper for comparison table creation"""
+        try:
+            # Force All tab selection again just before creating table
+            self.results_notebook.set("All")
+            self.update_idletasks()
+
+            # Clear the tab content
+            for widget in self.all_scroll.winfo_children():
+                widget.destroy()
+
+            # Create container frame with explicit size
+            container_frame = timetablinggui.GUIFrame(self.all_scroll)
+            container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+            # Force geometry calculation
+            container_frame.update_idletasks()
+
+            # Create and show the comparison table
+            self.create_comparison_table(results)
+
+            # Final update to ensure display
+            self.update_idletasks()
+            self.after(100, self.update_idletasks)
+        except Exception as e:
+            print(f"Error in safe table creation: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+
     def create_comparison_table(self, results):
         """Create comparison table focusing on key scheduling metrics"""
         print("Starting comparison table creation...")
         print(f"Number of results to process: {len(results)}")
 
-        # Clear existing content
-        for scroll in [self.all_scroll]:
-            for widget in scroll.winfo_children():
-                widget.destroy()
+        # Ensure we're on the All tab
+        self.results_notebook.set("All")
+        self.update_idletasks()
+
+        # Create a new frame to hold everything
+        main_container = timetablinggui.GUIFrame(self.all_scroll)
+        main_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Force geometry management
+        main_container.update_idletasks()
 
         if not results:
             print("No results to display!")
@@ -662,7 +692,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         try:
             # Create a container frame
             container_frame = timetablinggui.GUIFrame(self.all_scroll)
-            container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            container_frame.pack(fill="both", padx=0, pady=0)
 
             # Create table with adjusted column widths
             table = timetablinggui.TableManager(
@@ -673,7 +703,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 header_color=("gray70", "gray30"),
                 hover=True
             )
-            table.pack(fill="both", expand=True, padx=10, pady=5)
+            table.pack(fill="both", expand=True, padx=0, pady=0)
             print("Table widget created successfully")
 
             # Concise analysis text
