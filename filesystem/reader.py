@@ -51,6 +51,7 @@ class ProblemFileReader:
             ]
 
             return SchedulingProblem(
+                name=filename,
                 rooms=rooms,
                 time_slots=time_slots,
                 exams=exams,

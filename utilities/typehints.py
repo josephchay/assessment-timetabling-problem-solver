@@ -33,6 +33,7 @@ class Exam:
 class SchedulingProblem:
     """Represents a complete scheduling problem instance"""
 
+    name: str
     rooms: List[Room]
     time_slots: List[TimeSlot]
     exams: List[Exam]

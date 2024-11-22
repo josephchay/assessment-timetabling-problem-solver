@@ -8,7 +8,7 @@ import time as time_module
 from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
-from utilities import SchedulingProblem
+from utilities import SchedulingProblem, MetricsAnalyzer
 from utilities.functions import format_elapsed_time
 from visualization import TimetableAnalyzer
 
@@ -147,14 +147,16 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             font=timetablinggui.GUIFont(size=12)
         )
         self.second_solver_label.grid(row=6, column=0, padx=20, pady=5)
+        self.second_solver_label.grid_remove()  # Hide by default
 
         self.second_solver_menu = timetablinggui.GUIOptionMenu(
             self.sidebar_frame,
-            values=["None"] + list(SolverFactory.solvers.keys()),
+            values=list(SolverFactory.solvers.keys()),
             command=None
         )
-        self.second_solver_menu.set("None")
+        self.second_solver_menu.set("z3")
         self.second_solver_menu.grid(row=7, column=0, padx=20, pady=5)
+        self.second_solver_menu.grid_remove()  # Hide by default
 
         # Instance variables for solutions
         # self.current_solution = None
@@ -343,31 +345,35 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             self.status_label.configure(text="Please select a test instances folder first.")
             return
 
-        selected_solver = self.solver_menu.get()
-        second_solver = self.second_solver_menu.get() if self.comparison_mode_var.get() else "None"
+        # Get selected solvers
+        solver1 = self.solver_menu.get()
+        solver2 = self.second_solver_menu.get() if self.comparison_mode_var.get() else None
 
-        if selected_solver == "Select Solver":
+        # Validate solver selections
+        if solver1 == "Select Solver":
             self.status_label.configure(text="Please select at least one solver.")
             return
 
-        if second_solver != "None" and selected_solver == second_solver:
-            self.status_label.configure(text="Please select two different solvers to compare.")
-            return
+        if self.comparison_mode_var.get():
+            if solver2 == "Select Solver" or solver2 is None:
+                self.status_label.configure(text="Please select a second solver for comparison.")
+                return
+            if solver1 == solver2:
+                self.status_label.configure(text="Please select two different solvers to compare.")
+                return
 
-        sat_results = []
-        unsat_results = []
+        comparison_results = []
         total_solution_time = 0
 
+        # Only process sat files
         test_files = sorted(
-            [f for f in self.tests_dir.iterdir() if f.name != ".idea"],
+            [f for f in self.tests_dir.iterdir()
+             if f.name.startswith('sat') and f.name != ".idea"],
             key=lambda x: int(re.search(r'\d+', x.stem).group() or 0)
         )
 
         total_files = len(test_files)
         for i, test_file in enumerate(test_files):
-            if test_file.name == ".idea":
-                continue
-
             try:
                 self.status_label.configure(text=f"Processing {test_file.name}...")
                 self.progressbar.set((i + 1) / total_files)
@@ -376,59 +382,66 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 problem = ProblemFileReader.read_file(str(test_file))
                 self.current_problem = problem
 
-                start_solution = time_module.time()
+                # Process first solver
+                start_time1 = time_module.time()
+                solver1_instance = SolverFactory.get_solver(solver1, problem)
+                solution1 = solver1_instance.solve()
+                time1 = int((time_module.time() - start_time1) * 1000)
+                total_solution_time += time1
 
-                solver_instance = SolverFactory.get_solver(selected_solver, problem)
-                solution1 = solver_instance.solve()
-                time1 = int((time_module.time() - start_solution) * 1000)
+                if self.comparison_mode_var.get():
+                    # Process second solver
+                    start_time2 = time_module.time()
+                    solver2_instance = SolverFactory.get_solver(solver2, problem)
+                    solution2 = solver2_instance.solve()
+                    time2 = int((time_module.time() - start_time2) * 1000)
+                    total_solution_time += time2
 
-                if second_solver != "None":
-                    start_second_solution = time_module.time()
-                    second_solver_instance = SolverFactory.get_solver(second_solver, problem)
-                    solution2 = second_solver_instance.solve()
-                    time2 = int((time_module.time() - start_second_solution) * 1000)
-
-                    comparison_result = {
+                    # Store comparison results
+                    comparison_results.append({
                         'instance_name': test_file.stem,
                         'solver1': {
+                            'name': solver1,
                             'solution': solution1,
                             'time': time1
                         },
                         'solver2': {
+                            'name': solver2,
                             'solution': solution2,
                             'time': time2
                         },
-                        'difference': self.compare_solutions(solution1, solution2)
-                    }
-                    sat_results.append(comparison_result)
+                        'problem': problem  # Include problem for quality comparison
+                    })
                 else:
+                    # Single solver mode
                     if solution1:
                         formatted_solution = self.format_solution(solution1)
-                        sat_results.append({
+                        comparison_results.append({
                             'instance_name': test_file.stem,
                             'solution': solution1,
                             'problem': problem,
                             'formatted_solution': formatted_solution,
                             'time': time1
                         })
-                    else:
-                        unsat_results.append({'instance_name': test_file.stem})
 
             except Exception as e:
-                unsat_results.append({
-                    'instance_name': test_file.stem,
-                    'error': str(e)
-                })
+                print(f"Error processing {test_file.name}: {str(e)}")
+                continue
 
         if self.comparison_mode_var.get():
-            self.create_comparison_table(sat_results)
+            print(f"\nProcessing comparison between {solver1} and {solver2}")
+            print(f"Number of results to compare: {len(comparison_results)}")
+            self.create_comparison_table(comparison_results)
         else:
-            self.create_tables(sat_results, unsat_results)
+            self.create_tables(comparison_results, [])
 
         formatted_final_time = format_elapsed_time(total_solution_time)
-        self.status_label.configure(text=f"Completed! Total solution time: {formatted_final_time} | {total_solution_time}ms")
+        self.status_label.configure(
+            text=f"Completed! Processed {len(comparison_results)} instances in {formatted_final_time}"
+        )
 
-    def compare_solutions(self, solution1, solution2):
+    @staticmethod
+    def compare_solutions(solution1, solution2):
         """Compare two solutions and return differences"""
         # Define comparison logic, e.g., solution length, room utilization, etc.
         if solution1 is None and solution2 is None:
@@ -445,30 +458,240 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             }
 
     def create_comparison_table(self, results):
-        """Create a comparison table"""
+        """Create an enhanced comparison table focusing on SAT instances"""
+        # Clear existing content
         for scroll in [self.all_scroll]:
             for widget in scroll.winfo_children():
                 widget.destroy()
 
-        headers = ["Instance", "Solver 1 Time", "Solver 2 Time", "Difference"]
-        comparison_data = [
-            [
-                result['instance_name'],
-                result['solver1']['time'],
-                result['solver2']['time'],
-                result['difference']
-            ]
-            for result in results
+        # Filter only SAT instances
+        sat_results = [result for result in results if not result['instance_name'].lower().startswith('unsat')]
+
+        if not sat_results:
+            no_results_label = timetablinggui.GUILabel(
+                self.all_scroll,
+                text="No satisfiable instances found to compare.",
+                font=timetablinggui.GUIFont(size=12)
+            )
+            no_results_label.pack(pady=20)
+            return
+
+        # Define comparison metrics with solver names
+        solver1_name = sat_results[0]['solver1']['name']
+        solver2_name = sat_results[0]['solver2']['name']
+
+        headers = [
+            "Instance",
+            f"{solver1_name} Time (ms)",
+            f"{solver2_name} Time (ms)",
+            "Time Difference (%)",
+            "Performance Winner",
+            "Solution Quality"
         ]
+
+        comparison_data = []
+        for result in sat_results:
+            try:
+                time1 = result['solver1']['time']
+                time2 = result['solver2']['time']
+
+                # Calculate time difference percentage
+                time_diff_pct = ((time2 - time1) / time1 * 100) if time1 > 0 else 0
+
+                # Determine performance winner based on time
+                if time1 < time2:
+                    perf_winner = solver1_name
+                elif time2 < time1:
+                    perf_winner = solver2_name
+                else:
+                    perf_winner = "Tie"
+
+                # Compare solution quality
+                if result['solver1']['solution'] and result['solver2']['solution']:
+                    quality = self._compare_solution_quality(
+                        result['solver1']['solution'],
+                        result['solver2']['solution'],
+                        result['problem']
+                    )
+                else:
+                    quality = "N/A"
+
+                comparison_data.append([
+                    result['instance_name'],
+                    time1,
+                    time2,
+                    f"{time_diff_pct:.1f}%",
+                    perf_winner,
+                    quality
+                ])
+
+            except Exception as e:
+                print(f"Error processing result {result['instance_name']}: {str(e)}")
+                continue
+
+        # Calculate summary statistics
+        solver1_wins = sum(1 for row in comparison_data if row[4] == solver1_name)
+        solver2_wins = sum(1 for row in comparison_data if row[4] == solver2_name)
+        ties = sum(1 for row in comparison_data if row[4] == "Tie")
+
+        avg_time1 = sum(row[1] for row in comparison_data) / len(comparison_data)
+        avg_time2 = sum(row[2] for row in comparison_data) / len(comparison_data)
+
+        # Add summary rows
+        comparison_data.extend([
+            ["", "", "", "", "", ""],  # Empty row for spacing
+            [
+                "SUMMARY",
+                f"Avg: {avg_time1:.1f}ms",
+                f"Avg: {avg_time2:.1f}ms",
+                f"Time Diff: {((avg_time2 - avg_time1) / avg_time1 * 100):.1f}%",
+                f"Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)",
+                ""
+            ],
+            [
+                "WINNER",
+                "",
+                "",
+                "",
+                solver1_name if solver1_wins > solver2_wins else
+                solver2_name if solver2_wins > solver1_wins else "Tie",
+                ""
+            ]
+        ])
+
+        # Create and configure table
         comparison_table = timetablinggui.TableManager(
             master=self.all_scroll,
             row=len(comparison_data) + 1,
             column=len(headers),
             values=[headers] + comparison_data,
             header_color=("gray70", "gray30"),
-            hover=False
+            hover=True
         )
         comparison_table.pack(fill="both", expand=True, padx=10, pady=5)
+
+        # Add analysis text
+        analysis_text = f"""
+    Performance Analysis:
+    • {solver1_name} vs {solver2_name}
+    • Average Time: {avg_time1:.1f}ms vs {avg_time2:.1f}ms
+    • Win Distribution: {solver1_wins} vs {solver2_wins} ({ties} ties)
+    • Overall Speed Winner: {solver1_name if avg_time1 < avg_time2 else solver2_name}
+
+    Quality Metrics:
+    • Times shown are in milliseconds
+    • Time Difference shows how much faster/slower Solver 2 is compared to Solver 1
+    • Solution Quality compares room utilization and student distribution
+    """
+
+        analysis_label = timetablinggui.GUILabel(
+            self.all_scroll,
+            text=analysis_text,
+            font=timetablinggui.GUIFont(size=10),
+            justify="left"
+        )
+        analysis_label.pack(fill="x", padx=10, pady=5)
+
+    def _calculate_spread_score(self, metrics):
+        """Calculate a score for student exam spread"""
+        # Lower spread is better, normalize to 0-100
+        max_possible_spread = self.problem.number_of_slots - 1
+        normalized_spread = (max_possible_spread - metrics.average_student_spread) / max_possible_spread * 100
+        return normalized_spread
+
+    def _calculate_optimality(self, solution, problem):
+        """Calculate solution optimality percentage"""
+        # Factors to consider:
+        # 1. Room capacity utilization
+        # 2. Time slot distribution
+        # 3. Student conflicts minimization
+        # 4. Resource efficiency
+
+        weights = {
+            'room_utilization': 0.3,
+            'time_distribution': 0.3,
+            'student_spread': 0.2,
+            'resource_efficiency': 0.2
+        }
+
+        metrics = MetricsAnalyzer(problem).calculate_metrics(solution)
+
+        # Room utilization score
+        room_score = metrics.average_room_utilization
+
+        # Time distribution score
+        time_slots_used = len(set(s['timeSlot'] for s in solution))
+        time_score = (time_slots_used / problem.number_of_slots) * 100
+
+        # Student spread score (normalized)
+        spread_score = self._calculate_spread_score(metrics)
+
+        # Resource efficiency (rooms used vs available)
+        rooms_used = len(set(s['room'] for s in solution))
+        efficiency_score = (rooms_used / problem.number_of_rooms) * 100
+
+        # Calculate weighted average
+        optimality = (
+            weights['room_utilization'] * room_score +
+            weights['time_distribution'] * time_score +
+            weights['student_spread'] * spread_score +
+            weights['resource_efficiency'] * efficiency_score
+        )
+
+        return optimality
+
+    @staticmethod
+    def _calculate_overall_score(time_score, util_score, spread_score, optimality):
+        """Calculate overall solver performance score"""
+        weights = {
+            'time': 0.3,  # Execution time importance
+            'utilization': 0.2,  # Room utilization importance
+            'spread': 0.2,  # Student spread importance
+            'optimality': 0.3  # Solution optimality importance
+        }
+
+        # Normalize time score (lower is better)
+        max_acceptable_time = 1000  # 1 second
+        normalized_time = max(0, (max_acceptable_time - time_score) / max_acceptable_time * 100)
+
+        # Calculate weighted score
+        overall_score = (
+            weights['time'] * normalized_time +
+            weights['utilization'] * util_score +
+            weights['spread'] * spread_score +
+            weights['optimality'] * optimality
+        )
+
+        return overall_score
+
+    @staticmethod
+    def _get_memory_usage(solver_result):
+        """Estimate memory usage for solver (if available)"""
+        # This would need to be implemented based on how the memory track is tracked.
+        # Return placeholder for now
+        return "N/A"
+
+    @staticmethod
+    def _compare_solution_quality(solution1, solution2, problem):
+        """Compare the quality of two solutions using multiple metrics"""
+        metrics1 = MetricsAnalyzer(problem).calculate_metrics(solution1)
+        metrics2 = MetricsAnalyzer(problem).calculate_metrics(solution2)
+
+        # Compare room utilization
+        avg_util1 = metrics1.average_room_utilization
+        avg_util2 = metrics2.average_room_utilization
+
+        # Compare student spread
+        spread1 = metrics1.average_student_spread
+        spread2 = metrics2.average_student_spread
+
+        # Calculate overall quality score
+        quality_score1 = avg_util1 - spread1  # Higher utilization, lower spread is better
+        quality_score2 = avg_util2 - spread2
+
+        if abs(quality_score1 - quality_score2) < 0.1:  # Within 0.1% threshold
+            return "Equal"
+        return "Solver 1" if quality_score1 > quality_score2 else "Solver 2"
 
     def clear_results(self):
         """Clear all results"""
