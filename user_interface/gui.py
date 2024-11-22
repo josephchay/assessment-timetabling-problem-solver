@@ -15,7 +15,6 @@ from visualization import TimetableAnalyzer
 
 class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
     def __init__(self):
-        """Launch the GUI application"""
         timetablinggui.set_appearance_mode("dark")  # The system mode appearance
         timetablinggui.set_default_color_theme("blue")  # The color of the main widgets
 
@@ -27,9 +26,9 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.results_textbox = None
         self.progressbar = None
         self.sat_tables = {}
-        self.unsat_frames = {}  # Changed to store frames instead of single table
+        self.unsat_frames = {}
         self.sat_headers = ["Exam", "Room", "Time Slot"]
-        self.unsat_headers = ["Exam", "Room", "Time Slot"]  # Match SAT format
+        self.unsat_headers = ["Exam", "Room", "Time Slot"]
 
         # Configure window
         self.title("Assessment Timetabling Scheduler")
@@ -40,9 +39,9 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.grid_columnconfigure(1, weight=1)
 
         # Create sidebar frame with widgets
-        self.sidebar_frame = timetablinggui.GUIFrame(self, width=200, corner_radius=0)  # Increased width
+        self.sidebar_frame = timetablinggui.GUIFrame(self, width=200, corner_radius=0)
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
-        self.sidebar_frame.grid_rowconfigure(4, weight=1)
+        self.sidebar_frame.grid_rowconfigure(8, weight=1)
 
         # Create logo label
         self.logo_label = timetablinggui.GUILabel(
@@ -58,11 +57,9 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.main_frame.grid_rowconfigure(0, weight=1)
         self.main_frame.grid_columnconfigure(0, weight=1)
 
-        # Create results tabview with increased height
+        # Create results tabview
         self.results_notebook = timetablinggui.GUITabview(self.main_frame)
         self.results_notebook.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
-
-        # Configure tab width and height
         self.results_notebook._segmented_button.configure(width=400)
 
         # Create tabs
@@ -70,12 +67,11 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.sat_tab = self.results_notebook.add("SAT")
         self.unsat_tab = self.results_notebook.add("UNSAT")
 
-        # Configure tabs to expand fully
         for tab in [self.all_tab, self.sat_tab, self.unsat_tab]:
             tab.grid_rowconfigure(0, weight=1)
             tab.grid_columnconfigure(0, weight=1)
 
-        # Create single scrollable frame for each tab
+        # Create scrollable frames for each tab
         self.all_scroll = timetablinggui.GUIScrollableFrame(self.all_tab)
         self.sat_scroll = timetablinggui.GUIScrollableFrame(self.sat_tab)
         self.unsat_scroll = timetablinggui.GUIScrollableFrame(self.unsat_tab)
@@ -83,7 +79,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         for scroll in [self.all_scroll, self.sat_scroll, self.unsat_scroll]:
             scroll.pack(fill="both", expand=True)
 
-        # Create buttons
+        # Create sidebar buttons
         self.select_folder_button = timetablinggui.GUIButton(
             self.sidebar_frame,
             width=180,
@@ -108,23 +104,19 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         )
         self.clear_button.grid(row=3, column=0, padx=20, pady=10)
 
-        # Create progress bar
+        # Progress bar
         self.progressbar = timetablinggui.GUIProgressBar(self.main_frame)
         self.progressbar.grid(row=1, column=0, padx=20, pady=10, sticky="ew")
         self.progressbar.set(0)
 
-        # Create status label
+        # Status label
         self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
         self.status_label.grid(row=2, column=0, padx=20, pady=10)
 
-        self.current_solution = None
-        self.solutions = {}
-
-        # Add solver selection
+        # Solver selection
         self.solver_frame = timetablinggui.GUIFrame(self.sidebar_frame)
         self.solver_frame.grid(row=4, column=0, padx=20, pady=10)
 
-        # First solver selection
         self.solver_label = timetablinggui.GUILabel(
             self.solver_frame,
             text="Select Solution:",
@@ -137,10 +129,10 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             values=list(SolverFactory.solvers.keys()),
             command=None
         )
-        self.solver_menu.set("z3")  # Default solver
+        self.solver_menu.set("z3")
         self.solver_menu.pack()
 
-        # Add a toggle for comparison mode
+        # Comparison mode toggle
         self.comparison_mode_var = timetablinggui.GUISwitch(
             self.sidebar_frame,
             text="Enable Comparison Mode",
@@ -148,20 +140,25 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         )
         self.comparison_mode_var.grid(row=5, column=0, padx=20, pady=10)
 
-        # Add second solver selection dropdown
+        # Second solver dropdown
         self.second_solver_label = timetablinggui.GUILabel(
             self.sidebar_frame,
             text="Second Solver (Optional):",
             font=timetablinggui.GUIFont(size=12)
         )
+        self.second_solver_label.grid(row=6, column=0, padx=20, pady=5)
+
         self.second_solver_menu = timetablinggui.GUIOptionMenu(
             self.sidebar_frame,
             values=["None"] + list(SolverFactory.solvers.keys()),
             command=None
         )
-        self.second_solver_menu.set("None")  # Default value
-        self.second_solver_label.grid(row=6, column=0, padx=20, pady=5)
+        self.second_solver_menu.set("None")
         self.second_solver_menu.grid(row=7, column=0, padx=20, pady=5)
+
+        # Instance variables for solutions
+        # self.current_solution = None
+        # self.solutions = {}
 
     def toggle_comparison_mode(self):
         """Enable or disable comparison mode based on the toggle state"""
