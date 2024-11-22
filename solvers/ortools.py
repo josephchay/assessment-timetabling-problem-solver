@@ -1,8 +1,7 @@
 from ortools.sat.python import cp_model
-from typing import Any, List
+from typing import Any
 
-from constraints import BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
-    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
+from constraints import BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
 from utilities import BaseSolver, SchedulingProblem
 
 

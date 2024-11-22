@@ -1,8 +1,6 @@
 from typing import Dict, Type
-from solvers import ZThreeSolver
-from solvers import ORToolsSolver
-from solvers import GurobiSolver
-from solvers import CBCSolver
+from solvers import ZThreeSolver, ORToolsSolver, GurobiSolver, CBCSolver, SCIPSolver
+
 from utilities import SchedulingProblem
 
 
@@ -11,7 +9,8 @@ class SolverFactory:
         'z3': ZThreeSolver,
         'ortools': ORToolsSolver,
         'gurobi': GurobiSolver,
-        'cbc': CBCSolver
+        'cbc': CBCSolver,
+        'scip': SCIPSolver,
     }
 
     @staticmethod

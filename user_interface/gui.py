@@ -8,7 +8,6 @@ import time as time_module
 from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
-from solvers import ZThreeSolver
 from utilities import SchedulingProblem
 from visualization import TimetableAnalyzer
 

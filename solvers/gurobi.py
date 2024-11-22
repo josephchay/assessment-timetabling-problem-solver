@@ -4,6 +4,7 @@ from typing import Any
 from constraints import BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
 from utilities import BaseSolver, SchedulingProblem
 
+
 class GurobiSolver(BaseSolver):
     def __init__(self, problem: SchedulingProblem):
         self.problem = problem

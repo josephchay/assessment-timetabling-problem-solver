@@ -7,3 +7,4 @@ from .zthree import ZThreeSolver
 from .gurobi import GurobiSolver
 from .ortools import ORToolsSolver
 from .cbc import CBCSolver
+from .scip import SCIPSolver
