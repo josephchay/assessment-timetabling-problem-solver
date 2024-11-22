@@ -8,3 +8,5 @@ from .gurobi import GurobiSolver
 from .ortools import ORToolsSolver
 from .cbc import CBCSolver
 from .scip import SCIPSolver
+from .localsearch import LocalSearchSolver
+from .tabusearch import TabuSearchSolver

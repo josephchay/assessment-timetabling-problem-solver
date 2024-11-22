@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added statistics visualization button for each satisfiable instance.
 - Feature - Added 3 new alternative solvers for the system.
 - Feature - Added SCIPSolver for alternative solution.
+- Feature - Added Local Search and Tabu Search solvers for alternative solution.
 
 ### Changed
 - Updated statistics visualization buttons and their information display options.
