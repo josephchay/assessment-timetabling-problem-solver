@@ -1,5 +1,6 @@
 from typing import Dict, Type
-from solvers import ZThreeSolver, ORToolsSolver, GurobiSolver, CBCSolver, SCIPSolver, LocalSearchSolver, TabuSearchSolver
+from solvers import ZThreeSolver, ORToolsSolver, GurobiSolver, CBCSolver, SCIPSolver, LocalSearchSolver, \
+    TabuSearchSolver, DEAPSolver
 
 from utilities import SchedulingProblem
 
@@ -11,6 +12,7 @@ class SolverFactory:
         'gurobi': GurobiSolver,
         'cbc': CBCSolver,
         'scip': SCIPSolver,
+        'deap': DEAPSolver,
         'localsearch': LocalSearchSolver,
         'tabusearch': TabuSearchSolver
     }
