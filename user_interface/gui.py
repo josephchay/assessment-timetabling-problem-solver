@@ -1,3 +1,4 @@
+from collections import defaultdict, Counter
 from pathlib import Path
 
 from typing import List
@@ -182,19 +183,6 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         if folder:
             self.tests_dir = Path(folder)
             self.status_label.configure(text=f"Selected folder: {folder}")
-
-    def toggle_view(self, view_type):
-        """Toggle between table and text view"""
-        if view_type == "table":
-            self.results_textbox.grid_remove()
-            self.results_container.grid()
-            self.table_view_button.configure(fg_color="gray40")
-            self.text_view_button.configure(fg_color="transparent")
-        else:
-            self.results_container.grid_remove()
-            self.results_textbox.grid()
-            self.text_view_button.configure(fg_color="gray40")
-            self.table_view_button.configure(fg_color="transparent")
 
     def create_instance_frame(self, parent, instance_name, data, solution=None, problem=None):
         """Create a frame for an instance with its table and view button"""
@@ -458,144 +446,316 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             }
 
     def create_comparison_table(self, results):
-        """Create an enhanced comparison table focusing on SAT instances"""
+        """Create comparison table focusing on key scheduling metrics"""
         # Clear existing content
         for scroll in [self.all_scroll]:
             for widget in scroll.winfo_children():
                 widget.destroy()
 
-        # Filter only SAT instances
-        sat_results = [result for result in results if not result['instance_name'].lower().startswith('unsat')]
+        solver1_name = results[0]['solver1']['name']
+        solver2_name = results[0]['solver2']['name']
 
-        if not sat_results:
-            no_results_label = timetablinggui.GUILabel(
-                self.all_scroll,
-                text="No satisfiable instances found to compare.",
-                font=timetablinggui.GUIFont(size=12)
-            )
-            no_results_label.pack(pady=20)
-            return
+        # Track statistics
+        solver1_wins = 0
+        solver2_wins = 0
+        ties = 0
+        solver1_times = []
+        solver2_times = []
+        solver1_better_room = 0
+        solver2_better_room = 0
+        equal_room = 0
+        solver1_better_student = 0
+        solver2_better_student = 0
+        equal_student = 0
 
-        # Define comparison metrics with solver names
-        solver1_name = sat_results[0]['solver1']['name']
-        solver2_name = sat_results[0]['solver2']['name']
-
+        # Shortened headers
         headers = [
-            "Instance",
-            f"{solver1_name} Time (ms)",
-            f"{solver2_name} Time (ms)",
-            "Time Difference (%)",
-            "Performance Winner",
-            "Solution Quality"
+            "Inst.",
+            f"{solver1_name}",
+            f"{solver2_name}",
+            "Room Usage",
+            "Time Spread",
+            "Stu. Gaps",
+            "Room Bal.",
+            "Quality"  # Shortened from Ovl. Quality
         ]
 
         comparison_data = []
-        for result in sat_results:
+        for result in results:
             try:
+                solution1 = result['solver1']['solution']
+                solution2 = result['solver2']['solution']
+                problem = result['problem']
                 time1 = result['solver1']['time']
                 time2 = result['solver2']['time']
 
-                # Calculate time difference percentage
-                time_diff_pct = ((time2 - time1) / time1 * 100) if time1 > 0 else 0
+                # Track times
+                solver1_times.append(time1)
+                solver2_times.append(time2)
 
-                # Determine performance winner based on time
-                if time1 < time2:
-                    perf_winner = solver1_name
-                elif time2 < time1:
-                    perf_winner = solver2_name
+                metrics1 = self._calculate_detailed_metrics(solution1, problem)
+                metrics2 = self._calculate_detailed_metrics(solution2, problem)
+
+                # Update statistics based on comparisons
+                room_usage_comp = self._format_comparison(metrics1['room_usage'], metrics2['room_usage'])
+                if "S1" in room_usage_comp:
+                    solver1_better_room += 1
+                elif "S2" in room_usage_comp:
+                    solver2_better_room += 1
                 else:
-                    perf_winner = "Tie"
+                    equal_room += 1
 
-                # Compare solution quality
-                if result['solver1']['solution'] and result['solver2']['solution']:
-                    quality = self._compare_solution_quality(
-                        result['solver1']['solution'],
-                        result['solver2']['solution'],
-                        result['problem']
-                    )
+                student_gaps_comp = self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps'])
+                if "S1" in student_gaps_comp:
+                    solver1_better_student += 1
+                elif "S2" in student_gaps_comp:
+                    solver2_better_student += 1
                 else:
-                    quality = "N/A"
+                    equal_student += 1
 
-                comparison_data.append([
+                overall_comp = self._determine_overall_winner(metrics1, metrics2, time1, time2)
+                if "S1" in overall_comp:
+                    solver1_wins += 1
+                elif "S2" in overall_comp:
+                    solver2_wins += 1
+                else:
+                    ties += 1
+
+                row_data = [
                     result['instance_name'],
-                    time1,
-                    time2,
-                    f"{time_diff_pct:.1f}%",
-                    perf_winner,
-                    quality
-                ])
+                    f"{time1}ms",
+                    f"{time2}ms",
+                    self._format_comparison(metrics1['room_usage'], metrics2['room_usage']),
+                    self._format_comparison(metrics1['time_spread'], metrics2['time_spread']),
+                    self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps']),
+                    self._format_comparison(metrics1['room_balance'], metrics2['room_balance']),
+                    overall_comp
+                ]
+                comparison_data.append(row_data)
 
             except Exception as e:
-                print(f"Error processing result {result['instance_name']}: {str(e)}")
+                print(f"Error processing {result['instance_name']}: {str(e)}")
                 continue
 
-        # Calculate summary statistics
-        solver1_wins = sum(1 for row in comparison_data if row[4] == solver1_name)
-        solver2_wins = sum(1 for row in comparison_data if row[4] == solver2_name)
-        ties = sum(1 for row in comparison_data if row[4] == "Tie")
+        # Calculate averages
+        solver1_avg_time = sum(solver1_times) / len(solver1_times) if solver1_times else 0
+        solver2_avg_time = sum(solver2_times) / len(solver2_times) if solver2_times else 0
 
-        avg_time1 = sum(row[1] for row in comparison_data) / len(comparison_data)
-        avg_time2 = sum(row[2] for row in comparison_data) / len(comparison_data)
+        # Determine overall winner (shortened format)
+        overall_winner = f"{solver2_name if solver2_wins > solver1_wins else solver1_name} ({max(solver1_wins, solver2_wins)})"
 
-        # Add summary rows
-        comparison_data.extend([
-            ["", "", "", "", "", ""],  # Empty row for spacing
-            [
-                "SUMMARY",
-                f"Avg: {avg_time1:.1f}ms",
-                f"Avg: {avg_time2:.1f}ms",
-                f"Time Diff: {((avg_time2 - avg_time1) / avg_time1 * 100):.1f}%",
-                f"Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)",
-                ""
-            ],
-            [
-                "WINNER",
-                "",
-                "",
-                "",
-                solver1_name if solver1_wins > solver2_wins else
-                solver2_name if solver2_wins > solver1_wins else "Tie",
-                ""
-            ]
+        # Add summary row with more concise format
+        comparison_data.append([
+            "SUMMARY",
+            f"Avg: {solver1_avg_time:.1f}",
+            f"Avg: {solver2_avg_time:.1f}",
+            f"Room: {solver1_better_room}-{solver2_better_room}-{equal_room}",
+            f"Time: {solver1_wins}-{solver2_wins}-{ties}",
+            f"Stu: {solver1_better_student}-{solver2_better_student}-{equal_student}",
+            f"Bal: {solver1_wins}-{solver2_wins}-{ties}",
+            overall_winner
         ])
 
-        # Create and configure table
-        comparison_table = timetablinggui.TableManager(
-            master=self.all_scroll,
-            row=len(comparison_data) + 1,
-            column=len(headers),
-            values=[headers] + comparison_data,
-            header_color=("gray70", "gray30"),
-            hover=True
+        try:
+            # Create table with adjusted column widths
+            table = timetablinggui.TableManager(
+                master=self.all_scroll,
+                row=len(comparison_data) + 1,
+                column=len(headers),
+                values=[headers] + comparison_data,
+                header_color=("gray70", "gray30"),
+                hover=True
+            )
+            table.pack(fill="both", expand=True, padx=10, pady=5)
+
+            # Concise analysis text
+            analysis_text = f"""
+                Performance Analysis:
+                • {solver1_name} vs {solver2_name}
+                • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
+                • Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)
+                • Room Usage: {solver1_better_room} vs {solver2_better_room} ({equal_room} equal)
+                • Student Gaps: {solver1_better_student} vs {solver2_better_student} ({equal_student} equal)
+
+                Metrics Guide:
+                • Room Usage: Higher % = better utilization
+                • Time Spread: Higher = better distribution
+                • Student Gaps: Higher = better exam spacing
+                • Room Balance: Higher = more consistent usage
+                • Quality: Combined score of all metrics
+                """
+            analysis_label = timetablinggui.GUILabel(
+                self.all_scroll,
+                text=analysis_text,
+                font=timetablinggui.GUIFont(size=12),
+                justify="left"
+            )
+            analysis_label.pack(fill="x", padx=10, pady=5)
+
+        except Exception as e:
+            print(f"Error creating table: {str(e)}")
+
+    @staticmethod
+    def _format_comparison(value1, value2, is_time=False):
+        """Format comparison values with minimal but accurate information"""
+        diff = value2 - value1
+        if abs(diff) < 1.0:
+            return f"Equal ({value1:.1f})"  # Show value for equal cases
+
+        # For time metrics, lower is better
+        base = min(value1, value2) if value1 > 0 and value2 > 0 else max(value1, value2)
+        if base == 0:
+            percent_diff = 100.0
+        else:
+            percent_diff = (abs(diff) / base) * 100.0
+
+        # For time metrics, lower is better; for other metrics, higher is better
+        if is_time:
+            winner = "S1" if value1 < value2 else "S2"
+        else:
+            winner = "S2" if diff > 0 else "S1"
+
+        return f"{winner} (+{percent_diff:.1f}%)"
+
+    @staticmethod
+    def _determine_overall_winner(metrics1, metrics2, time1, time2):
+        """Calculate overall quality score with detailed metrics"""
+        weights = {
+            'time': 0.3,
+            'room_usage': 0.2,
+            'time_spread': 0.15,
+            'student_gaps': 0.2,
+            'room_balance': 0.15
+        }
+
+        # Normalize time scores (lower is better)
+        max_time = max(time1, time2)
+        time_score1 = 100 * (1 - time1 / max_time) if max_time > 0 else 100
+        time_score2 = 100 * (1 - time2 / max_time) if max_time > 0 else 100
+
+        score1 = (
+            weights['time'] * time_score1 +
+            weights['room_usage'] * metrics1['room_usage'] +
+            weights['time_spread'] * metrics1['time_spread'] +
+            weights['student_gaps'] * metrics1['student_gaps'] +
+            weights['room_balance'] * metrics1['room_balance']
         )
-        comparison_table.pack(fill="both", expand=True, padx=10, pady=5)
 
-        # Add analysis text
-        analysis_text = f"""
-    Performance Analysis:
-    • {solver1_name} vs {solver2_name}
-    • Average Time: {avg_time1:.1f}ms vs {avg_time2:.1f}ms
-    • Win Distribution: {solver1_wins} vs {solver2_wins} ({ties} ties)
-    • Overall Speed Winner: {solver1_name if avg_time1 < avg_time2 else solver2_name}
-
-    Quality Metrics:
-    • Times shown are in milliseconds
-    • Time Difference shows how much faster/slower Solver 2 is compared to Solver 1
-    • Solution Quality compares room utilization and student distribution
-    """
-
-        analysis_label = timetablinggui.GUILabel(
-            self.all_scroll,
-            text=analysis_text,
-            font=timetablinggui.GUIFont(size=10),
-            justify="left"
+        score2 = (
+            weights['time'] * time_score2 +
+            weights['room_usage'] * metrics2['room_usage'] +
+            weights['time_spread'] * metrics2['time_spread'] +
+            weights['student_gaps'] * metrics2['student_gaps'] +
+            weights['room_balance'] * metrics2['room_balance']
         )
-        analysis_label.pack(fill="x", padx=10, pady=5)
 
-    def _calculate_spread_score(self, metrics):
+        if abs(score1 - score2) < 1.0:
+            return f"Equal ({score1:.1f})"
+        return f"{'S1' if score1 > score2 else 'S2'} ({max(score1, score2):.1f})"
+
+    @staticmethod
+    def _calculate_detailed_metrics(solution, problem):
+        """Calculate detailed metrics for a solution"""
+        metrics = {}
+
+        try:
+            # Room Usage Efficiency
+            room_usage = defaultdict(float)
+            for exam in solution:
+                room_id = exam['room']
+                room_capacity = problem.rooms[room_id].capacity
+                exam_size = problem.exams[exam['examId']].get_student_count()
+                usage = (exam_size / room_capacity) * 100
+                room_usage[room_id] = max(room_usage[room_id], usage)
+
+            # Apply penalty for under-utilization
+            metrics['room_usage'] = sum(
+                usage if usage >= 80 else usage * 0.8
+                for usage in room_usage.values()
+            ) / len(room_usage) if room_usage else 0
+
+            # Time Spread calculation
+            time_slots = [exam['timeSlot'] for exam in solution]
+            slot_counts = Counter(time_slots)
+            avg_exams = len(solution) / len(slot_counts) if slot_counts else 0
+            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(
+                slot_counts) if slot_counts else 0
+            metrics['time_spread'] = min(100, 100 / (1 + variance))
+
+            # Student Gaps
+            student_schedules = defaultdict(list)
+            for exam in solution:
+                for student in problem.exams[exam['examId']].students:
+                    student_schedules[student].append((exam['timeSlot'], exam['room']))
+
+            gap_scores = []
+            for schedule in student_schedules.values():
+                schedule.sort()
+                for i in range(len(schedule) - 1):
+                    time_gap = schedule[i + 1][0] - schedule[i][0]
+                    room_dist = abs(schedule[i + 1][1] - schedule[i][1])
+                    if time_gap == 0:
+                        gap_scores.append(0)  # Conflict
+                    elif time_gap == 1:
+                        gap_scores.append(max(0, 70 - room_dist * 10))  # Back-to-back penalty
+                    elif time_gap == 2:
+                        gap_scores.append(100)  # Ideal gap
+                    else:
+                        gap_scores.append(max(0, 80 - (time_gap - 2) * 15))  # Longer gap penalty
+
+            metrics['student_gaps'] = sum(gap_scores) / len(gap_scores) if gap_scores else 100
+
+            # Room Balance
+            room_loads = defaultdict(list)
+            for exam in solution:
+                room_id = exam['room']
+                exam_size = problem.exams[exam['examId']].get_student_count()
+                room_loads[room_id].append((exam_size / problem.rooms[room_id].capacity) * 100)
+
+            balance_scores = []
+            for loads in room_loads.values():
+                avg_load = sum(loads) / len(loads)
+                balance_scores.append(100 - abs(90 - avg_load))  # 90% is optimal utilization
+
+            metrics['room_balance'] = sum(balance_scores) / len(balance_scores) if balance_scores else 0
+
+            return metrics
+
+        except Exception as e:
+            print(f"Error in metric calculation: {str(e)}")
+            import traceback
+            print(traceback.format_exc())
+            return {
+                'room_usage': 0,
+                'time_spread': 0,
+                'student_gaps': 0,
+                'room_balance': 0
+            }
+
+    @staticmethod
+    def _compare_metric(value1, value2, threshold=1.0):
+        """Compare metrics with a threshold for equality"""
+        if abs(value1 - value2) < threshold:
+            return "Equal"
+        return "Solver 1" if value1 > value2 else "Solver 2"
+
+    @staticmethod
+    def _calculate_overall_quality(metrics):
+        """Calculate overall quality score with weights"""
+        weights = {
+            'room_usage': 0.3,
+            'time_spread': 0.2,
+            'student_gaps': 0.3,
+            'room_balance': 0.2
+        }
+
+        return sum(metrics[key] * weights[key] for key in weights)
+
+    @staticmethod
+    def _calculate_spread_score(metrics, problem):
         """Calculate a score for student exam spread"""
         # Lower spread is better, normalize to 0-100
-        max_possible_spread = self.problem.number_of_slots - 1
+        max_possible_spread = problem.number_of_slots - 1
         normalized_spread = (max_possible_spread - metrics.average_student_spread) / max_possible_spread * 100
         return normalized_spread
 
@@ -624,7 +784,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         time_score = (time_slots_used / problem.number_of_slots) * 100
 
         # Student spread score (normalized)
-        spread_score = self._calculate_spread_score(metrics)
+        spread_score = self._calculate_spread_score(metrics, problem)
 
         # Resource efficiency (rooms used vs available)
         rooms_used = len(set(s['room'] for s in solution))
@@ -677,21 +837,109 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         metrics1 = MetricsAnalyzer(problem).calculate_metrics(solution1)
         metrics2 = MetricsAnalyzer(problem).calculate_metrics(solution2)
 
+        # Define weights for different quality aspects
+        weights = {
+            'room_utilization': 0.25,  # Efficient use of room capacity
+            'time_distribution': 0.20,  # Even distribution across time slots
+            'student_spread': 0.20,  # Good spacing of student exams
+            'resource_efficiency': 0.15,  # Minimal resource usage
+            'compactness': 0.20  # How well packed the solution is
+        }
+
         # Compare room utilization
         avg_util1 = metrics1.average_room_utilization
         avg_util2 = metrics2.average_room_utilization
+        util_score1 = avg_util1
+        util_score2 = avg_util2
 
-        # Compare student spread
-        spread1 = metrics1.average_student_spread
-        spread2 = metrics2.average_student_spread
+        # 2. Time Distribution Score (how evenly spread exams are across slots)
+        def calculate_time_distribution(solution):
+            time_slots_used = len(set(s['timeSlot'] for s in solution))
+            exams_per_slot = {}
+            for exam in solution:
+                slot = exam['timeSlot']
+                exams_per_slot[slot] = exams_per_slot.get(slot, 0) + 1
 
-        # Calculate overall quality score
-        quality_score1 = avg_util1 - spread1  # Higher utilization, lower spread is better
-        quality_score2 = avg_util2 - spread2
+            if not exams_per_slot:
+                return 0
 
-        if abs(quality_score1 - quality_score2) < 0.1:  # Within 0.1% threshold
+            # Calculate variance in exams per slot (lower is better)
+            mean_exams = len(solution) / time_slots_used
+            variance = sum((count - mean_exams) ** 2 for count in exams_per_slot.values()) / len(exams_per_slot)
+            # Convert to score where lower variance is better (0-100 scale)
+            max_possible_variance = len(solution) ** 2
+            return 100 * (1 - variance / max_possible_variance)
+
+        time_dist_score1 = calculate_time_distribution(solution1)
+        time_dist_score2 = calculate_time_distribution(solution2)
+
+        # 3. Student Spread Score (normalized by number of slots)
+        spread_score1 = 100 * (1 - metrics1.average_student_spread / problem.number_of_slots)
+        spread_score2 = 100 * (1 - metrics2.average_student_spread / problem.number_of_slots)
+
+        # 4. Resource Efficiency Score
+        def calculate_resource_efficiency(solution, problem):
+            rooms_used = len(set(s['room'] for s in solution))
+            slots_used = len(set(s['timeSlot'] for s in solution))
+
+            # Calculate efficiency scores (higher is better)
+            room_efficiency = 100 * (1 - (rooms_used / problem.number_of_rooms))
+            time_efficiency = 100 * (1 - (slots_used / problem.number_of_slots))
+
+            return (room_efficiency + time_efficiency) / 2
+
+        resource_score1 = calculate_resource_efficiency(solution1, problem)
+        resource_score2 = calculate_resource_efficiency(solution2, problem)
+
+        # 5. Solution Compactness Score
+        def calculate_compactness(solution, problem):
+            # Calculate how well the solution minimizes gaps
+            used_slots = sorted(set(s['timeSlot'] for s in solution))
+            if not used_slots:
+                return 0
+
+            # Calculate gaps between used slots
+            gaps = sum(used_slots[i + 1] - used_slots[i] - 1
+                       for i in range(len(used_slots) - 1))
+
+            # Convert to score where fewer gaps is better
+            max_possible_gaps = problem.number_of_slots - len(used_slots)
+            return 100 * (1 - gaps / max_possible_gaps if max_possible_gaps > 0 else 1)
+
+        compact_score1 = calculate_compactness(solution1, problem)
+        compact_score2 = calculate_compactness(solution2, problem)
+
+        # Calculate final weighted scores
+        final_score1 = (
+            weights['room_utilization'] * util_score1 +
+            weights['time_distribution'] * time_dist_score1 +
+            weights['student_spread'] * spread_score1 +
+            weights['resource_efficiency'] * resource_score1 +
+            weights['compactness'] * compact_score1
+        )
+
+        final_score2 = (
+            weights['room_utilization'] * util_score2 +
+            weights['time_distribution'] * time_dist_score2 +
+            weights['student_spread'] * spread_score2 +
+            weights['resource_efficiency'] * resource_score2 +
+            weights['compactness'] * compact_score2
+        )
+
+        # Return detailed comparison
+        scores = {
+            'util': (util_score1, util_score2),
+            'time_dist': (time_dist_score1, time_dist_score2),
+            'spread': (spread_score1, spread_score2),
+            'resource': (resource_score1, resource_score2),
+            'compact': (compact_score1, compact_score2),
+            'final': (final_score1, final_score2)
+        }
+
+        # Compare with threshold
+        if abs(final_score1 - final_score2) < 0.1:
             return "Equal"
-        return "Solver 1" if quality_score1 > quality_score2 else "Solver 2"
+        return "Solver 1" if final_score1 > final_score2 else "Solver 2"
 
     def clear_results(self):
         """Clear all results"""
