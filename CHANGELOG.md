@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated statistics visualization buttons and their information display options.
 - Made space between statistics buttons and visualization options more.
 - Updated the functionality of CBC Solver to make it more effective in comprehending all the constraints.
+- Renewed the solution timers to be more user friendly by including both milliseconds and the combination of minutes and seconds.
 
 ### Refactoring
 - Updated code structure to be more clean through Separation of Concerns.

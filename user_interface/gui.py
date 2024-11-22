@@ -9,6 +9,7 @@ from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
 from utilities import SchedulingProblem
+from utilities.functions import format_elapsed_time
 from visualization import TimetableAnalyzer
 
 
@@ -309,15 +310,14 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
 
     def run_scheduler(self):
         """Run the scheduler on all test files"""
-
         if not self.tests_dir:
             self.status_label.configure(text="Please select a test instances folder first.")
             return
 
-        start = time_module.time()
         sat_results = []
         unsat_results = []
         all_solver_results = {}  # For comparison view
+        total_solution_time = 0  # Initialize total solution time
 
         selected_solver = self.solver_menu.get()
 
@@ -335,15 +335,18 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 self.status_label.configure(text=f"Processing {test_file.name}...")
                 self.progressbar.set((i + 1) / total_files)
                 self.update()
+
+                # File reading (not included in timing)
                 problem = ProblemFileReader.read_file(str(test_file))
                 self.current_problem = problem
 
-                # Store results for each solver if "All" is selected
+                # Start timing for solution processing
+                start_solution = time_module.time()
+
+                # Solution processing
                 if selected_solver == "All":
                     solver_results = SolverFactory.solve_with_all_solvers(problem)
                     all_solver_results[test_file.stem] = solver_results
-
-                    # Use first successful solution for display
                     success_solution = next(
                         (result['solution'] for result in solver_results.values()
                          if result['solution'] is not None),
@@ -353,6 +356,14 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 else:
                     solver = SolverFactory.get_solver(selected_solver, problem)
                     solution = solver.solve()
+
+                # Add the time taken for this solution
+                solution_time = int((time_module.time() - start_solution) * 1000)
+                total_solution_time += solution_time
+
+                # Update status with current accumulated time
+                formatted_time = format_elapsed_time(solution_time)
+                self.status_label.configure(text=f"Processing {test_file.name}... Total current solution time: {formatted_time} | {solution_time}ms")
 
                 if solution:
                     formatted_solution = self.format_solution(solution)
@@ -374,8 +385,9 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         # Update tables and comparison view
         self.create_tables(sat_results, unsat_results)
 
-        elapsed = int((time_module.time() - start) * 1000)
-        self.status_label.configure(text=f"Completed! Time: {elapsed}ms")
+        # Display final accumulated solution time
+        formatted_final_time = format_elapsed_time(total_solution_time)
+        self.status_label.configure(text=f"Completed! Total solution time: {formatted_final_time} | {total_solution_time}ms")
 
     def clear_results(self):
         """Clear all results"""
