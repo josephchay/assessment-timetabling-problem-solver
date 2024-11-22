@@ -437,6 +437,8 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         for widget in self.all_scroll.winfo_children():
             widget.destroy()
 
+        self.all_scroll._parent_canvas.yview_moveto(0)
+
         if self.comparison_mode_var.get():
             print(f"\nProcessing comparison between {solver1} and {solver2}")
             print(f"Number of results to compare: {len(comparison_results)}")
@@ -471,47 +473,33 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
     def _create_comparison_table_safe(self, results):
         """Safe wrapper for comparison table creation"""
         try:
-            # Force All tab selection again just before creating table
+            # Force All tab selection
             self.results_notebook.set("All")
-            self.update_idletasks()
 
-            # Clear the tab content
+            # Reset scroll position to top
+            self.all_scroll._parent_canvas.yview_moveto(0)
+
+            # Clear existing content
             for widget in self.all_scroll.winfo_children():
                 widget.destroy()
 
-            # Create container frame with explicit size
-            container_frame = timetablinggui.GUIFrame(self.all_scroll)
-            container_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            # Force update after clearing
+            self.update_idletasks()
 
-            # Force geometry calculation
-            container_frame.update_idletasks()
-
-            # Create and show the comparison table
+            # Create comparison table directly
             self.create_comparison_table(results)
 
-            # Final update to ensure display
+            # Force final update
+            self.all_scroll._parent_canvas.yview_moveto(0)
             self.update_idletasks()
-            self.after(100, self.update_idletasks)
+
         except Exception as e:
             print(f"Error in safe table creation: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
 
     def create_comparison_table(self, results):
         """Create comparison table focusing on key scheduling metrics"""
         print("Starting comparison table creation...")
         print(f"Number of results to process: {len(results)}")
-
-        # Ensure we're on the All tab
-        self.results_notebook.set("All")
-        self.update_idletasks()
-
-        # Create a new frame to hold everything
-        main_container = timetablinggui.GUIFrame(self.all_scroll)
-        main_container.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Force geometry management
-        main_container.update_idletasks()
 
         if not results:
             print("No results to display!")
@@ -705,40 +693,80 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
             )
             table.pack(fill="both", expand=True, padx=0, pady=0)
             print("Table widget created successfully")
+            # Create analysis section with top padding
+            analysis_section = timetablinggui.GUIFrame(container_frame)
+            analysis_section.pack(fill="x", padx=10, pady=(20, 5))  # Added top padding
 
-            # Concise analysis text
-            analysis_text = f"""
-                    Performance Analysis:
-                    • {solver1_name} vs {solver2_name}
-                    • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
-                    • Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)
-                    • Room Usage: {solver1_better_room} vs {solver2_better_room} ({equal_room} equal)
-                    • Student Gaps: {solver1_better_student} vs {solver2_better_student} ({equal_student} equal)
+            # Create side-by-side frames with rounded corners
+            performance_frame = timetablinggui.GUIFrame(
+                analysis_section,
+                corner_radius=10,
+                fg_color="gray20"  # Slightly different background for contrast
+            )
+            performance_frame.pack(side="left", expand=True, fill="both", padx=(0, 5))
 
-                    Metrics Guide:
-                    • Room Usage: Higher % = better utilization
-                    • Time Spread: Higher = better distribution
-                    • Student Gaps: Higher = better exam spacing
-                    • Room Balance: Higher = more consistent usage
-                    • Quality: Combined score of all metrics
-                    """
-            analysis_label = timetablinggui.GUILabel(
-                container_frame,
-                text=analysis_text,
+            metrics_frame = timetablinggui.GUIFrame(
+                analysis_section,
+                corner_radius=10,
+                fg_color="gray20"  # Slightly different background for contrast
+            )
+            metrics_frame.pack(side="left", expand=True, fill="both", padx=(5, 0))
+
+            performance_text = f"""Performance Analysis:
+• {solver1_name} vs {solver2_name}
+• Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
+• Wins: {solver1_wins} vs {solver2_wins} ({ties} ties)
+
+Comparison by Metric:
+• Room Usage: {solver1_better_room} vs {solver2_better_room} ({equal_room} equal)
+  (How efficiently room capacity is utilized)
+
+• Time Spread: {self._format_comparison(metrics1['time_spread'], metrics2['time_spread'])}
+  (How evenly exams are distributed across time slots)
+
+• Student Gaps: {solver1_better_student} vs {solver2_better_student} ({equal_student} equal)
+  (How well student exam times are spaced)
+
+• Room Balance: {self._format_comparison(metrics1['room_balance'], metrics2['room_balance'])}
+  (How evenly rooms are used across time slots)"""
+
+            metrics_text = """Metrics Guide:
+• Room Usage: Higher % = better room capacity utilization
+  (e.g., filling 80 seats in a 100-seat room)
+
+• Time Spread: Higher = more even exam distribution
+  (avoiding too many exams in same time slot)
+
+• Student Gaps: Higher = better spacing between exams
+  (avoiding back-to-back exams for students)
+
+• Room Balance: Higher = more consistent room usage
+  (using all rooms evenly rather than overusing some)
+
+• Quality: Combined score of all metrics above"""
+
+            # Left side: Performance Analysis with padding inside rounded corner
+            performance_label = timetablinggui.GUILabel(
+                performance_frame,
+                text=performance_text,
                 font=timetablinggui.GUIFont(size=12),
                 justify="left"
             )
-            analysis_label.pack(fill="x", padx=10, pady=5)
-            print("Analysis label created successfully")
+            performance_label.pack(side="left", expand=True, fill="both", padx=15, pady=15)
 
-            # Force updates at multiple levels
+            # Right side: Metrics Guide with padding inside rounded corner
+            metrics_label = timetablinggui.GUILabel(
+                metrics_frame,
+                text=metrics_text,
+                font=timetablinggui.GUIFont(size=12),
+                justify="left"
+            )
+            metrics_label.pack(side="left", expand=True, fill="both", padx=15, pady=15)
+
+            # Force immediate updates
             container_frame.update()
-            self.all_scroll.update()
-            self.update()
-
-            # Set focus to the All tab
-            self.results_notebook.set("All")
-            self.after(100, self.update)  # Schedule another update after a brief delay
+            table.update()
+            self.update_idletasks()
         except Exception as e:
             print(f"Error creating table widget: {str(e)}")
             import traceback

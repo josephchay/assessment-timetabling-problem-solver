@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the functionality of CBC Solver to make it more effective in comprehending all the constraints.
 - Renewed the solution timers to be more user friendly by including both milliseconds and the combination of minutes and seconds.
 - Updated the table results display for better details of statistics comparison between multiple solvers' solutions.
+- Improved the performance and metrics legend guide for multi-solvers' solution panelling logic and interface.
 
 ### Refactoring
 - Updated code structure to be more clean through Separation of Concerns.
