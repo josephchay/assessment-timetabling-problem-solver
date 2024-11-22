@@ -29,7 +29,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.sat_tables = {}
         self.unsat_frames = {}  # Changed to store frames instead of single table
         self.sat_headers = ["Exam", "Room", "Time Slot"]
-        self.unsat_headers = ["Exam", "Room", "Time Slot"]  # Changed to match SAT format
+        self.unsat_headers = ["Exam", "Room", "Time Slot"]  # Match SAT format
 
         # Configure window
         self.title("Assessment Timetabling Scheduler")
@@ -124,6 +124,7 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         self.solver_frame = timetablinggui.GUIFrame(self.sidebar_frame)
         self.solver_frame.grid(row=4, column=0, padx=20, pady=10)
 
+        # First solver selection
         self.solver_label = timetablinggui.GUILabel(
             self.solver_frame,
             text="Select Solution:",
@@ -138,6 +139,38 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         )
         self.solver_menu.set("z3")  # Default solver
         self.solver_menu.pack()
+
+        # Add a toggle for comparison mode
+        self.comparison_mode_var = timetablinggui.GUISwitch(
+            self.sidebar_frame,
+            text="Enable Comparison Mode",
+            command=self.toggle_comparison_mode
+        )
+        self.comparison_mode_var.grid(row=5, column=0, padx=20, pady=10)
+
+        # Add second solver selection dropdown
+        self.second_solver_label = timetablinggui.GUILabel(
+            self.sidebar_frame,
+            text="Second Solver (Optional):",
+            font=timetablinggui.GUIFont(size=12)
+        )
+        self.second_solver_menu = timetablinggui.GUIOptionMenu(
+            self.sidebar_frame,
+            values=["None"] + list(SolverFactory.solvers.keys()),
+            command=None
+        )
+        self.second_solver_menu.set("None")  # Default value
+        self.second_solver_label.grid(row=6, column=0, padx=20, pady=5)
+        self.second_solver_menu.grid(row=7, column=0, padx=20, pady=5)
+
+    def toggle_comparison_mode(self):
+        """Enable or disable comparison mode based on the toggle state"""
+        if self.comparison_mode_var.get():
+            self.second_solver_label.grid()  # Show the second solver selection
+            self.second_solver_menu.grid()
+        else:
+            self.second_solver_label.grid_remove()  # Hide the second solver selection
+            self.second_solver_menu.grid_remove()
 
     def show_visualization(self, solution):
         """Show visualization in a separate window"""
@@ -309,17 +342,24 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
         return "\n".join(formatted_lines)
 
     def run_scheduler(self):
-        """Run the scheduler on all test files"""
         if not self.tests_dir:
             self.status_label.configure(text="Please select a test instances folder first.")
             return
 
+        selected_solver = self.solver_menu.get()
+        second_solver = self.second_solver_menu.get() if self.comparison_mode_var.get() else "None"
+
+        if selected_solver == "Select Solver":
+            self.status_label.configure(text="Please select at least one solver.")
+            return
+
+        if second_solver != "None" and selected_solver == second_solver:
+            self.status_label.configure(text="Please select two different solvers to compare.")
+            return
+
         sat_results = []
         unsat_results = []
-        all_solver_results = {}  # For comparison view
-        total_solution_time = 0  # Initialize total solution time
-
-        selected_solver = self.solver_menu.get()
+        total_solution_time = 0
 
         test_files = sorted(
             [f for f in self.tests_dir.iterdir() if f.name != ".idea"],
@@ -336,45 +376,46 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                 self.progressbar.set((i + 1) / total_files)
                 self.update()
 
-                # File reading (not included in timing)
                 problem = ProblemFileReader.read_file(str(test_file))
                 self.current_problem = problem
 
-                # Start timing for solution processing
                 start_solution = time_module.time()
 
-                # Solution processing
-                if selected_solver == "All":
-                    solver_results = SolverFactory.solve_with_all_solvers(problem)
-                    all_solver_results[test_file.stem] = solver_results
-                    success_solution = next(
-                        (result['solution'] for result in solver_results.values()
-                         if result['solution'] is not None),
-                        None
-                    )
-                    solution = success_solution
-                else:
-                    solver = SolverFactory.get_solver(selected_solver, problem)
-                    solution = solver.solve()
+                solver_instance = SolverFactory.get_solver(selected_solver, problem)
+                solution1 = solver_instance.solve()
+                time1 = int((time_module.time() - start_solution) * 1000)
 
-                # Add the time taken for this solution
-                solution_time = int((time_module.time() - start_solution) * 1000)
-                total_solution_time += solution_time
+                if second_solver != "None":
+                    start_second_solution = time_module.time()
+                    second_solver_instance = SolverFactory.get_solver(second_solver, problem)
+                    solution2 = second_solver_instance.solve()
+                    time2 = int((time_module.time() - start_second_solution) * 1000)
 
-                # Update status with current accumulated time
-                formatted_time = format_elapsed_time(solution_time)
-                self.status_label.configure(text=f"Processing {test_file.name}... Total current solution time: {formatted_time} | {solution_time}ms")
-
-                if solution:
-                    formatted_solution = self.format_solution(solution)
-                    sat_results.append({
+                    comparison_result = {
                         'instance_name': test_file.stem,
-                        'solution': solution,
-                        'problem': problem,
-                        'formatted_solution': formatted_solution
-                    })
+                        'solver1': {
+                            'solution': solution1,
+                            'time': time1
+                        },
+                        'solver2': {
+                            'solution': solution2,
+                            'time': time2
+                        },
+                        'difference': self.compare_solutions(solution1, solution2)
+                    }
+                    sat_results.append(comparison_result)
                 else:
-                    unsat_results.append({'instance_name': test_file.stem})
+                    if solution1:
+                        formatted_solution = self.format_solution(solution1)
+                        sat_results.append({
+                            'instance_name': test_file.stem,
+                            'solution': solution1,
+                            'problem': problem,
+                            'formatted_solution': formatted_solution,
+                            'time': time1
+                        })
+                    else:
+                        unsat_results.append({'instance_name': test_file.stem})
 
             except Exception as e:
                 unsat_results.append({
@@ -382,12 +423,55 @@ class AssessmentSchedulerGUI(timetablinggui.TimetablingGUI):
                     'error': str(e)
                 })
 
-        # Update tables and comparison view
-        self.create_tables(sat_results, unsat_results)
+        if self.comparison_mode_var.get():
+            self.create_comparison_table(sat_results)
+        else:
+            self.create_tables(sat_results, unsat_results)
 
-        # Display final accumulated solution time
         formatted_final_time = format_elapsed_time(total_solution_time)
         self.status_label.configure(text=f"Completed! Total solution time: {formatted_final_time} | {total_solution_time}ms")
+
+    def compare_solutions(self, solution1, solution2):
+        """Compare two solutions and return differences"""
+        # Define comparison logic, e.g., solution length, room utilization, etc.
+        if solution1 is None and solution2 is None:
+            return "Both UNSAT"
+        elif solution1 is None:
+            return "Solver 2 SAT, Solver 1 UNSAT"
+        elif solution2 is None:
+            return "Solver 1 SAT, Solver 2 UNSAT"
+        else:
+            # Example: Compare based on time and other metrics
+            return {
+                "time_difference": abs(solution1['time'] - solution2['time']),
+                "other_metric": "Comparison logic goes here"
+            }
+
+    def create_comparison_table(self, results):
+        """Create a comparison table"""
+        for scroll in [self.all_scroll]:
+            for widget in scroll.winfo_children():
+                widget.destroy()
+
+        headers = ["Instance", "Solver 1 Time", "Solver 2 Time", "Difference"]
+        comparison_data = [
+            [
+                result['instance_name'],
+                result['solver1']['time'],
+                result['solver2']['time'],
+                result['difference']
+            ]
+            for result in results
+        ]
+        comparison_table = timetablinggui.TableManager(
+            master=self.all_scroll,
+            row=len(comparison_data) + 1,
+            column=len(headers),
+            values=[headers] + comparison_data,
+            header_color=("gray70", "gray30"),
+            hover=False
+        )
+        comparison_table.pack(fill="both", expand=True, padx=10, pady=5)
 
     def clear_results(self):
         """Clear all results"""
