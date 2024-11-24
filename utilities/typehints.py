@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Dict, Set
+from typing import List, Dict, Set, Optional
 
 
 # Domain Models
@@ -30,14 +30,26 @@ class Exam:
 
 
 @dataclass
+class Invigilator:
+    """Represents an invigilator that can supervise exams"""
+    id: int
+    max_exams_per_day: int = 3
+    unavailable_slots: Set[int] = None
+
+    def __post_init__(self):
+        if self.unavailable_slots is None:
+            self.unavailable_slots = set()
+
+
+@dataclass
 class SchedulingProblem:
     """Represents a complete scheduling problem instance"""
-
     name: str
     rooms: List[Room]
     time_slots: List[TimeSlot]
     exams: List[Exam]
     total_students: int
+    invigilators: Optional[List[Invigilator]] = None
 
     @property
     def number_of_rooms(self) -> int:
@@ -50,6 +62,22 @@ class SchedulingProblem:
     @property
     def number_of_exams(self) -> int:
         return len(self.exams)
+
+    @property
+    def number_of_invigilators(self) -> int:
+        return len(self.invigilators) if self.invigilators else 0
+
+    def add_default_invigilators(self, num_invigilators: int = None):
+        """Add default invigilators if none exist"""
+        if self.invigilators is None:
+            if num_invigilators is None:
+                # Default to number of rooms if not specified
+                num_invigilators = self.number_of_rooms
+
+            self.invigilators = [
+                Invigilator(id=i)
+                for i in range(num_invigilators)
+            ]
 
 
 @dataclass

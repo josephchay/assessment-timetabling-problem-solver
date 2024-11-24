@@ -1,8 +1,11 @@
 from ortools.sat.python import cp_model
 from typing import Any
 
-from constraints import BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
 from utilities import BaseSolver, SchedulingProblem
+from conditioning import SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, TimeSlotDistributionConstraint, \
+    RoomTransitionTimeConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint
 
 
 class ORToolsSolver(BaseSolver):
@@ -19,11 +22,19 @@ class ORToolsSolver(BaseSolver):
 
         # Register constraints
         self.constraints = [
-            BasicRangeConstraint(),
+            SingleAssignmentConstraint(),
             RoomConflictConstraint(),
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
-            MaxExamsPerSlotConstraint()
+            MaxExamsPerSlotConstraint(),
+            TimeSlotDistributionConstraint(),
+            RoomTransitionTimeConstraint(),
+            DepartmentGroupingConstraint(),
+            RoomBalancingConstraint(),
+            InvigilatorAssignmentConstraint(),
+            PreferredRoomSequenceConstraint(),
+            ExamDurationBalancingConstraint(),
+            ExamDurationBalancingConstraint(),
         ]
 
     @staticmethod

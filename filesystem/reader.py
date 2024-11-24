@@ -1,5 +1,4 @@
 import re
-from typing import Dict, Set
 
 from utilities import SchedulingProblem, Room, TimeSlot, Exam
 
@@ -32,7 +31,7 @@ class ProblemFileReader:
             time_slots = [TimeSlot(t) for t in range(num_slots)]
 
             # Create exams with their students
-            exam_students: Dict[int, Set[int]] = {}
+            exam_students = {}
             for line in f:
                 if line.strip():
                     match = re.match('^\\s*(\\d+)\\s+(\\d+)\\s*$', line)
@@ -50,10 +49,15 @@ class ProblemFileReader:
                 for exam_id, students in exam_students.items()
             ]
 
-            return SchedulingProblem(
+            problem = SchedulingProblem(
                 name=filename,
                 rooms=rooms,
                 time_slots=time_slots,
                 exams=exams,
                 total_students=num_students
             )
+
+            # Add default invigilators equal to number of rooms
+            problem.add_default_invigilators()
+
+            return problem

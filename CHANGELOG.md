@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added Local Search and Tabu Search solvers for alternative solution.
 - Feature - Added DEAPSolver for alternative solution.
 - Feature - Added foundation functionality for results comparison between multiple solvers.
+- Feature - Added 8 more unique extraordinary constraints for the system.
 
 ### Changed
 - Updated statistics visualization buttons and their information display options.

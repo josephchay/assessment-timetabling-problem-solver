@@ -1,8 +1,11 @@
 import gurobipy as gp
 from typing import Any
 
-from constraints import BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
 from utilities import BaseSolver, SchedulingProblem
+from conditioning import SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, RoomTransitionTimeConstraint, \
+    TimeSlotDistributionConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint
 
 
 class GurobiSolver(BaseSolver):
@@ -30,11 +33,19 @@ class GurobiSolver(BaseSolver):
 
         # Register constraints
         self.constraints = [
-            BasicRangeConstraint(),
+            SingleAssignmentConstraint(),
             RoomConflictConstraint(),
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
-            MaxExamsPerSlotConstraint()
+            MaxExamsPerSlotConstraint(),
+            TimeSlotDistributionConstraint(),
+            RoomTransitionTimeConstraint(),
+            DepartmentGroupingConstraint(),
+            RoomBalancingConstraint(),
+            InvigilatorAssignmentConstraint(),
+            PreferredRoomSequenceConstraint(),
+            ExamDurationBalancingConstraint(),
+            ExamDurationBalancingConstraint(),
         ]
 
         self.model.update()

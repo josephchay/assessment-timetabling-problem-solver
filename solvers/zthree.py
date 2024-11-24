@@ -2,7 +2,11 @@ from z3 import Solver, Int, unsat
 from typing import Any, List
 
 from utilities import SchedulingProblem
-from constraints import IConstraint, BasicRangeConstraint, RoomConflictConstraint, RoomCapacityConstraint, NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint
+from conditioning import IConstraint, SingleAssignmentConstraint, RoomConflictConstraint, \
+    RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, TimeSlotDistributionConstraint, \
+    RoomTransitionTimeConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint
 
 
 class ZThreeSolver:
@@ -15,11 +19,19 @@ class ZThreeSolver:
 
         # Register constraints
         self.constraints: List[IConstraint] = [
-            BasicRangeConstraint(),
+            SingleAssignmentConstraint(),
             RoomConflictConstraint(),
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
-            MaxExamsPerSlotConstraint()
+            MaxExamsPerSlotConstraint(),
+            TimeSlotDistributionConstraint(),
+            RoomTransitionTimeConstraint(),
+            DepartmentGroupingConstraint(),
+            RoomBalancingConstraint(),
+            InvigilatorAssignmentConstraint(),
+            PreferredRoomSequenceConstraint(),
+            ExamDurationBalancingConstraint(),
+            ExamDurationBalancingConstraint(),
         ]
 
     @staticmethod
