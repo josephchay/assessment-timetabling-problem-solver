@@ -1,8 +1,12 @@
+import traceback
 import re
 from collections import defaultdict, Counter
 from pathlib import Path
 import time as time_module
+from typing import List
 
+from conditioning import RoomCapacityConstraint, TimeSlotDistributionConstraint, NoConsecutiveSlotsConstraint, \
+    RoomBalancingConstraint
 from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
@@ -160,8 +164,7 @@ class SchedulerController:
         if self.view.comparison_mode_var.get():
             print(f"\nProcessing comparison between {solver1} and {solver2}")
             print(f"Number of results to compare: {len(comparison_results)}")
-            self.view.after(100,
-                            lambda: self.view.comparison_controller._create_comparison_table_safe(comparison_results))
+            self.view.after(100, lambda: self.view.comparison_controller._create_comparison_table_safe(comparison_results))
         else:
             # Convert results to the format expected by create_tables
             formatted_results = []
@@ -211,17 +214,99 @@ class ComparisonController:
             print(f"Error in safe table creation: {str(e)}")
 
     def create_comparison_table(self, results):
+        """Create comparison table with key metrics"""
         if not results:
             self._show_no_results_message()
             return
 
         solver1_name = results[0]['solver1']['name']
         solver2_name = results[0]['solver2']['name']
-
         statistics = self._initialize_statistics()
-        comparison_data = self._prepare_comparison_data(results, statistics)
+        headers = [
+            "Inst.",
+            f"{solver1_name}",
+            f"{solver2_name}",
+            "Room Usage",
+            "Time Spread",
+            "Stu. Gaps",
+            "Room Bal.",
+            "Quality"
+        ]
 
-        self._create_table_widget(comparison_data, solver1_name, solver2_name, statistics)
+        comparison_data = []
+        for result in results:
+            try:
+                solution1 = result['solver1']['solution']
+                solution2 = result['solver2']['solution']
+                problem = result['problem']
+                time1 = result['solver1']['time']
+                time2 = result['solver2']['time']
+
+                if solution1 is not None:
+                    statistics['solver1_times'].append(time1)
+                if solution2 is not None:
+                    statistics['solver2_times'].append(time2)
+
+                metrics1 = self._calculate_metrics(solution1, problem) if solution1 else None
+                metrics2 = self._calculate_metrics(solution2, problem) if solution2 else None
+
+                row = self._create_comparison_row(
+                    result['instance_name'],
+                    time1,
+                    time2,
+                    metrics1,
+                    metrics2,
+                    statistics
+                )
+                comparison_data.append(row)
+
+            except Exception as e:
+                print(f"Error processing result {result['instance_name']}: {str(e)}")
+                comparison_data.append(self._create_error_row(result['instance_name']))
+
+        # Add summary row
+        summary_row = [
+            "Summary",
+            f"Wins: {statistics['solver1_wins']}",
+            f"Wins: {statistics['solver2_wins']}",
+            f"S1: {statistics['solver1_better_room']} vs S2: {statistics['solver2_better_room']}",
+            f"Ties: {statistics['ties']}",
+            f"S1: {statistics['solver1_better_student']} vs S2: {statistics['solver2_better_student']}",
+            f"Room Bal: Equal",
+            f"Overall Quality"
+        ]
+        comparison_data.append(summary_row)
+
+        # Create table widget and performance analysis
+        self._create_table_widget(comparison_data, solver1_name, solver2_name, statistics, headers)
+
+    def _calculate_metrics(self, solution, problem):
+        """Calculate key metrics for a solution"""
+
+        room_usage = self._evaluate_constraint(RoomCapacityConstraint(), problem, solution)
+        time_spread = self._evaluate_constraint(TimeSlotDistributionConstraint(), problem, solution)
+        student_gaps = self._evaluate_constraint(NoConsecutiveSlotsConstraint(), problem, solution)
+        room_balance = self._evaluate_constraint(RoomBalancingConstraint(), problem, solution)
+
+        return {
+            'room_usage': room_usage,
+            'time_spread': time_spread,
+            'student_gaps': student_gaps,
+            'room_balance': room_balance
+        }
+
+    def _evaluate_constraint(self, constraint, problem, solution):
+        """Convert solution format and evaluate constraint metric"""
+        # Convert solution format from list of dicts to the format constraints expect
+        exam_time = {exam['examId']: exam['timeSlot'] for exam in solution}
+        exam_room = {exam['examId']: exam['room'] for exam in solution}
+
+        if hasattr(constraint, 'evaluate_metric'):
+            try:
+                return constraint.evaluate_metric(problem, exam_time, exam_room)
+            except Exception as e:
+                print(f"Error evaluating {constraint.__class__.__name__}: {str(e)}")
+        return 0.0
 
     def _show_no_results_message(self):
         no_results_label = timetablinggui.GUILabel(
@@ -284,7 +369,6 @@ class ComparisonController:
 
             except Exception as e:
                 print(f"Error processing result {result['instance_name']}: {str(e)}")
-                import traceback
                 print(traceback.format_exc())
                 comparison_data.append(self._create_error_row(result['instance_name']))
 
@@ -294,19 +378,37 @@ class ComparisonController:
 
         return comparison_data
 
-    def _create_comparison_row(self, result, solution1, solution2,
-                               time1, time2, metrics1, metrics2, statistics):
-        if solution1 is None and solution2 is None:
-            return self._create_unsat_row(result['instance_name'])
-        elif solution1 is None:
-            return self._create_partial_sat_row(result['instance_name'], False, time2)
-        elif solution2 is None:
-            return self._create_partial_sat_row(result['instance_name'], True, time1)
-        else:
-            return self._create_full_comparison_row(
-                result['instance_name'], time1, time2,
-                metrics1, metrics2, statistics
-            )
+    def _create_comparison_row(self, instance_name, time1, time2, metrics1, metrics2, statistics):
+        """Create a row comparing the metrics of two solutions."""
+        if metrics1 is None and metrics2 is None:
+            return self._create_unsat_row(instance_name)
+        elif metrics1 is None:
+            return self._create_partial_sat_row(instance_name, False, time2)
+        elif metrics2 is None:
+            return self._create_partial_sat_row(instance_name, True, time1)
+
+        # Room usage comparison
+        room_usage_comp = self._format_comparison(metrics1['room_usage'], metrics2['room_usage'])
+        self._update_room_statistics(room_usage_comp, statistics)
+
+        # Student gaps comparison
+        student_gaps_comp = self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps'])
+        self._update_student_statistics(student_gaps_comp, statistics)
+
+        # Overall comparison
+        overall_comp = self._determine_overall_winner(metrics1, metrics2, time1, time2)
+        self._update_winner_statistics(overall_comp, statistics)
+
+        return [
+            instance_name,
+            f"{time1}ms",
+            f"{time2}ms",
+            room_usage_comp,
+            self._format_comparison(metrics1['time_spread'], metrics2['time_spread']),
+            student_gaps_comp,
+            self._format_comparison(metrics1['room_balance'], metrics2['room_balance']),
+            overall_comp
+        ]
 
     def _create_unsat_row(self, instance_name):
         return [
@@ -357,78 +459,43 @@ class ComparisonController:
             "Error"
         ]
 
-    def _create_full_comparison_row(self, instance_name, time1, time2,
-                                    metrics1, metrics2, statistics):
-        room_usage_comp = self._format_comparison(
-            metrics1['room_usage'], metrics2['room_usage']
-        )
-        self._update_room_statistics(room_usage_comp, statistics)
-
-        student_gaps_comp = self._format_comparison(
-            metrics1['student_gaps'], metrics2['student_gaps']
-        )
-        self._update_student_statistics(student_gaps_comp, statistics)
-
-        overall_comp = self._determine_overall_winner(
-            metrics1, metrics2, time1, time2
-        )
-        self._update_winner_statistics(overall_comp, statistics)
-
-        return [
-            instance_name,
-            f"{time1}ms",
-            f"{time2}ms",
-            room_usage_comp,
-            self._format_comparison(metrics1['time_spread'], metrics2['time_spread']),
-            student_gaps_comp,
-            self._format_comparison(metrics1['room_balance'], metrics2['room_balance']),
-            self._format_comparison(metrics1['room_proximity'], metrics2['room_proximity']),
-            self._format_comparison(metrics1['room_sequence'], metrics2['room_sequence']),
-            self._format_comparison(metrics1['duration_balance'], metrics2['duration_balance']),
-            self._format_comparison(metrics1['invigilator_load'], metrics2['invigilator_load']),
-            overall_comp
+    def _create_full_comparison_row(self, instance_name, time1, time2, metrics1, metrics2, statistics):
+        metrics_to_compare = [
+            ('room_usage', 'Room Usage'),
+            ('time_spread', 'Time Spread'),
+            ('student_gaps', 'Student Gaps'),
+            ('room_balance', 'Room Balance'),
+            ('room_proximity', 'Room Proximity'),
+            ('room_sequence', 'Room Sequence'),
+            ('duration_balance', 'Duration Balance'),
+            ('invigilator_load', 'Invigilator Load')
         ]
 
-    def _create_table_widget(self, comparison_data, solver1_name, solver2_name, statistics):
+        row_data = [
+            instance_name,
+            f"{time1}ms",
+            f"{time2}ms"
+        ]
+
+        for metric_key, _ in metrics_to_compare:
+            if metric_key in metrics1 and metric_key in metrics2:
+                row_data.append(self._format_comparison(
+                    metrics1[metric_key], metrics2[metric_key])
+                )
+            else:
+                row_data.append("N/A")
+
+        return row_data
+
+    def _create_table_widget(self, comparison_data, solver1_name, solver2_name, statistics, headers):
+        """Create the table widget with headers and data."""
         # Create outer frame
         outer_frame = timetablinggui.GUIFrame(self.view.all_scroll)
         outer_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
-        headers = [
-            "Inst.",
-            f"{solver1_name}",
-            f"{solver2_name}",
-            "Room Usage",
-            "Time Spread",
-            "Stu. Gaps",
-            "Room Bal.",
-            "Room Prox.",
-            "Room Seq.",
-            "Duration Bal.",
-            "Invig. Load",
-            "Quality"
-        ]
-
-        # Create canvas for horizontal scrolling
-        canvas = timetablinggui.GUICanvas(outer_frame)
-        scrollbar = timetablinggui.GUIScrollbar(
-            outer_frame,
-            orientation="horizontal",
-            command=canvas.xview
-        )
-        scrollable_frame = timetablinggui.GUIFrame(canvas)
-
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(xscrollcommand=scrollbar.set)
-
-        # Create table in scrollable frame
+        # Create main table
         table = timetablinggui.TableManager(
-            master=scrollable_frame,
+            master=outer_frame,
             row=len(comparison_data) + 1,
             column=len(headers),
             values=[headers] + comparison_data,
@@ -437,13 +504,8 @@ class ComparisonController:
         )
         table.pack(fill="both", expand=True, padx=0, pady=0)
 
-        # Pack canvas and scrollbar
-        canvas.pack(side="top", fill="both", expand=True)
-        scrollbar.pack(side="bottom", fill="x")
-
         # Create analysis section
         self._create_analysis_section(outer_frame, solver1_name, solver2_name, statistics)
-
     def _create_analysis_section(self, container_frame, solver1_name, solver2_name, statistics):
         analysis_section = timetablinggui.GUIFrame(container_frame)
         analysis_section.pack(fill="x", padx=10, pady=(20, 5))
@@ -518,157 +580,191 @@ class ComparisonController:
 
     def _calculate_detailed_metrics(self, solution, problem):
         if solution is None:
-            return {
-                'room_usage': 0,
-                'time_spread': 0,
-                'student_gaps': 0,
-                'room_balance': 0,
-                'room_proximity': 0,
-                'room_sequence': 0,
-                'duration_balance': 0,
-                'invigilator_load': 0,
-            }
+            return self._get_default_metrics()
 
-        metrics = {}
         try:
+            metrics = {}
+
             # Room Usage Efficiency
-            room_usage = defaultdict(float)
-            for exam in solution:
-                room_id = exam['room']
-                room_capacity = problem.rooms[room_id].capacity
-                if room_capacity <= 0:
-                    continue
-                exam_size = problem.exams[exam['examId']].get_student_count()
-                usage = (exam_size / room_capacity) * 100
-                room_usage[room_id] = max(room_usage[room_id], usage)
+            metrics['room_usage'] = self._calculate_room_usage(solution, problem)
 
-            valid_rooms = [usage for rid, usage in room_usage.items()
-                           if problem.rooms[rid].capacity > 0]
-            metrics['room_usage'] = (sum(
-                usage if usage >= 80 else usage * 0.8
-                for usage in valid_rooms
-            ) / len(valid_rooms)) if valid_rooms else 0
-
-            # Time Spread calculation
+            # Time Distribution
             time_slots = [exam['timeSlot'] for exam in solution]
             slot_counts = Counter(time_slots)
             avg_exams = len(solution) / len(slot_counts) if slot_counts else 0
-            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(
-                slot_counts) if slot_counts else 0
+            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(slot_counts) if slot_counts else 0
             metrics['time_spread'] = min(100, 100 / (1 + variance))
 
             # Student Gaps
-            student_schedules = defaultdict(list)
-            for exam in solution:
-                for student in problem.exams[exam['examId']].students:
-                    student_schedules[student].append((exam['timeSlot'], exam['room']))
-
-            gap_scores = []
-            for schedule in student_schedules.values():
-                schedule.sort()
-                for i in range(len(schedule) - 1):
-                    time_gap = schedule[i + 1][0] - schedule[i][0]
-                    room_dist = abs(schedule[i + 1][1] - schedule[i][1])
-                    gap_scores.append(self._calculate_gap_score(time_gap, room_dist))
-
-            metrics['student_gaps'] = sum(gap_scores) / len(gap_scores) if gap_scores else 100
+            metrics['student_gaps'] = self._calculate_student_gaps(solution, problem)
 
             # Room Balance
-            room_loads = defaultdict(list)
-            for exam in solution:
-                room_id = exam['room']
-                if problem.rooms[room_id].capacity <= 0:
-                    continue
-                exam_size = problem.exams[exam['examId']].get_student_count()
-                room_loads[room_id].append((exam_size / problem.rooms[room_id].capacity) * 100)
+            metrics['room_balance'] = self._calculate_room_balance(solution, problem)
 
-            balance_scores = []
-            for room_id, loads in room_loads.items():
-                if problem.rooms[room_id].capacity > 0:
-                    avg_load = sum(loads) / len(loads)
-                    balance_scores.append(100 - abs(90 - avg_load))
+            # Room Proximity
+            metrics['room_proximity'] = self._calculate_room_proximity(solution)
 
-            metrics['room_balance'] = sum(balance_scores) / len(balance_scores) if balance_scores else 0
+            # Room Sequence
+            metrics['room_sequence'] = self._calculate_room_sequence(solution, problem)
 
-            # Room Proximity Score - Adding this metric
-            room_proximity_scores = []
-            for t in range(problem.number_of_slots):
-                concurrent_exams = [
-                    exam for exam in solution
-                    if exam['timeSlot'] == t
-                ]
-                if len(concurrent_exams) > 1:
-                    for i, exam1 in enumerate(concurrent_exams):
-                        for exam2 in concurrent_exams[i + 1:]:
-                            dist = abs(exam1['room'] - exam2['room'])
-                            proximity_score = max(0, 100 - (dist * 25))  # 25 points per room distance
-                            room_proximity_scores.append(proximity_score)
+            # Duration Balance (default if not implemented)
+            metrics['duration_balance'] = 100  # Default perfect score if not implemented
 
-            metrics['room_proximity'] = (
-                sum(room_proximity_scores) / len(room_proximity_scores)
-                if room_proximity_scores else 100
-            )
-
-            # Room Sequence Score
-            sorted_rooms = sorted(range(problem.number_of_rooms),
-                                  key=lambda r: problem.rooms[r].capacity)
-            room_indices = {r: i for i, r in enumerate(sorted_rooms)}
-
-            sequence_scores = []
-            for t in range(problem.number_of_slots - 1):
-                current_slot_exams = [e for e in solution if e['timeSlot'] == t]
-                next_slot_exams = [e for e in solution if e['timeSlot'] == t + 1]
-
-                if current_slot_exams and next_slot_exams:
-                    current_indices = [room_indices[e['room']] for e in current_slot_exams]
-                    next_indices = [room_indices[e['room']] for e in next_slot_exams]
-
-                    if max(current_indices) <= min(next_indices):
-                        sequence_scores.append(100)
-                    else:
-                        violations = sum(1 for c in current_indices for n in next_indices if c > n)
-                        max_violations = len(current_indices) * len(next_indices)
-                        sequence_scores.append(100 * (1 - violations / max_violations))
-
-            metrics['room_sequence'] = (
-                sum(sequence_scores) / len(sequence_scores)
-                if sequence_scores else 100
-            )
-
-            # Invigilator Load Balance - Making this optional
-            metrics['invigilator_load'] = 100  # Default perfect score if no invigilators
-            if hasattr(problem, 'invigilators') and problem.invigilators:
-                invig_loads = defaultdict(int)
-                for exam in solution:
-                    if 'invigilator' in exam:  # Only process if invigilator is assigned
-                        invig_loads[exam['invigilator']] += 1
-
-                if invig_loads:  # Only calculate if we have any invigilator assignments
-                    avg_load = len(solution) / len(problem.invigilators)
-                    load_scores = [
-                        100 * (1 - abs(load - avg_load) / avg_load)
-                        for load in invig_loads.values()
-                    ]
-                    metrics['invigilator_load'] = (
-                        sum(load_scores) / len(load_scores)
-                    )
+            # Invigilator Load (default if not implemented)
+            metrics['invigilator_load'] = 100  # Default perfect score if not implemented
 
             return metrics
 
         except Exception as e:
             print(f"Error in metric calculation: {str(e)}")
-            import traceback
-            print(traceback.format_exc())
-            return {
-                'room_usage': 0,
-                'time_spread': 0,
-                'student_gaps': 0,
-                'room_balance': 0,
-                'room_proximity': 0,
-                'room_sequence': 0,
-                'duration_balance': 0,
-                'invigilator_load': 0
-            }
+            return self._get_default_metrics()
+
+    def _calculate_room_usage(self, solution: List[dict], problem) -> float:
+        """Calculate room capacity utilization efficiency."""
+        room_usage = defaultdict(float)
+
+        for exam in solution:
+            room_id = exam['room']
+            if problem.rooms[room_id].capacity <= 0:
+                continue
+
+            exam_size = problem.exams[exam['examId']].get_student_count()
+            usage = (exam_size / problem.rooms[room_id].capacity) * 100
+            room_usage[room_id] = max(room_usage[room_id], usage)
+
+        valid_rooms = [usage for rid, usage in room_usage.items()
+                       if problem.rooms[rid].capacity > 0]
+
+        if not valid_rooms:
+            return 0.0
+
+        return sum(
+            usage if usage >= 80 else usage * 0.8
+            for usage in valid_rooms
+        ) / len(valid_rooms)
+
+    def _calculate_student_gaps(self, solution: List[dict], problem) -> float:
+        """Calculate how well student exams are spaced."""
+        student_schedules = defaultdict(list)
+
+        # Build student schedules
+        for exam in solution:
+            for student in problem.exams[exam['examId']].students:
+                student_schedules[student].append(
+                    (exam['timeSlot'], exam['room'])
+                )
+
+        gap_scores = []
+        for schedule in student_schedules.values():
+            schedule.sort()  # Sort by time slot
+
+            # Calculate gaps between consecutive exams
+            for i in range(len(schedule) - 1):
+                time_gap = schedule[i + 1][0] - schedule[i][0]
+                room_dist = abs(schedule[i + 1][1] - schedule[i][1])
+                gap_scores.append(self._score_gap(time_gap, room_dist))
+
+        return sum(gap_scores) / len(gap_scores) if gap_scores else 100
+
+    def _score_gap(self, time_gap: int, room_dist: int) -> float:
+        """Score a gap between exams."""
+        if time_gap == 0:  # Same time slot - conflict
+            return 0
+        elif time_gap == 1:  # Adjacent slots - penalize based on room distance
+            return max(0, 70 - room_dist * 10)
+        elif time_gap == 2:  # Ideal gap
+            return 100
+        else:  # Longer gaps - slight penalty
+            return max(0, 80 - (time_gap - 2) * 15)
+
+    def _calculate_room_balance(self, solution: List[dict], problem) -> float:
+        """Calculate how evenly rooms are utilized."""
+        room_loads = defaultdict(list)
+
+        for exam in solution:
+            room_id = exam['room']
+            if problem.rooms[room_id].capacity <= 0:
+                continue
+
+            exam_size = problem.exams[exam['examId']].get_student_count()
+            load = (exam_size / problem.rooms[room_id].capacity) * 100
+            room_loads[room_id].append(load)
+
+        balance_scores = []
+        for loads in room_loads.values():
+            if loads:
+                avg_load = sum(loads) / len(loads)
+                balance_scores.append(100 - abs(90 - avg_load))
+
+        return sum(balance_scores) / len(balance_scores) if balance_scores else 0
+
+    def _calculate_room_proximity(self, solution: List[dict]) -> float:
+        """Calculate how close together rooms are for concurrent exams."""
+        proximity_scores = []
+
+        # For each time slot
+        for t in set(exam['timeSlot'] for exam in solution):
+            concurrent_exams = [
+                exam for exam in solution
+                if exam['timeSlot'] == t
+            ]
+
+            # Calculate proximity scores for concurrent exam pairs
+            if len(concurrent_exams) > 1:
+                for i, exam1 in enumerate(concurrent_exams):
+                    for exam2 in concurrent_exams[i + 1:]:
+                        dist = abs(exam1['room'] - exam2['room'])
+                        # Score decreases with distance between rooms
+                        proximity_score = max(0, 100 - (dist * 25))
+                        proximity_scores.append(proximity_score)
+
+        return (sum(proximity_scores) / len(proximity_scores)
+                if proximity_scores else 100)
+
+    def _calculate_room_sequence(self, solution: List[dict], problem) -> float:
+        """Calculate how well room assignments follow capacity-based sequence."""
+        # Sort rooms by capacity
+        sorted_rooms = sorted(range(problem.number_of_rooms),
+                              key=lambda r: problem.rooms[r].capacity)
+        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
+
+        sequence_scores = []
+        # Compare consecutive time slots
+        for t in range(problem.number_of_slots - 1):
+            current_slot_exams = [e for e in solution if e['timeSlot'] == t]
+            next_slot_exams = [e for e in solution if e['timeSlot'] == t + 1]
+
+            if current_slot_exams and next_slot_exams:
+                current_indices = [room_indices[e['room']]
+                                   for e in current_slot_exams]
+                next_indices = [room_indices[e['room']]
+                                for e in next_slot_exams]
+
+                # Perfect score if current max index <= next min index
+                if max(current_indices) <= min(next_indices):
+                    sequence_scores.append(100)
+                else:
+                    # Count sequence violations
+                    violations = sum(1 for c in current_indices
+                                     for n in next_indices if c > n)
+                    max_violations = len(current_indices) * len(next_indices)
+                    sequence_scores.append(100 * (1 - violations / max_violations))
+
+        return (sum(sequence_scores) / len(sequence_scores)
+                if sequence_scores else 100)
+
+    def _get_default_metrics(self):
+        """Return default metrics for invalid solutions."""
+        return {
+            'room_usage': 0,
+            'time_spread': 0,
+            'student_gaps': 0,
+            'room_balance': 0,
+            'room_proximity': 0,
+            'room_sequence': 0,
+            'duration_balance': 0,
+            'invigilator_load': 0
+        }
 
     def _create_summary_row(self, statistics):
         """Create a summary row for the comparison table."""

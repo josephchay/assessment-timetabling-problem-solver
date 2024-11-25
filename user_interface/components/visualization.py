@@ -149,10 +149,7 @@ class VisualizationManager:
         self.current_analyzer: Optional[TimetableAnalyzer] = None
         self.graph_buttons: Dict[str, Dict[str, timetablinggui.GUIButton]] = {}  # Changed to nested dict
 
-    def create_visualization_controls(self, parent_frame: timetablinggui.GUIFrame,
-                                      solution: List[dict],
-                                      problem: SchedulingProblem,
-                                      instance_name: str) -> None:
+    def create_visualization_controls(self, parent_frame: timetablinggui.GUIFrame, solution: List[dict], problem: SchedulingProblem, instance_name: str) -> None:
         """Create visualization control buttons for a solution.
 
         Args:
