@@ -5,8 +5,6 @@ from pathlib import Path
 import time as time_module
 from typing import List
 
-from conditioning import RoomCapacityConstraint, TimeSlotDistributionConstraint, NoConsecutiveSlotsConstraint, \
-    RoomBalancingConstraint
 from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
@@ -282,18 +280,107 @@ class ComparisonController:
 
     def _calculate_metrics(self, solution, problem):
         """Calculate key metrics for a solution"""
+        if solution is None:
+            return None
 
-        room_usage = self._evaluate_constraint(RoomCapacityConstraint(), problem, solution)
-        time_spread = self._evaluate_constraint(TimeSlotDistributionConstraint(), problem, solution)
-        student_gaps = self._evaluate_constraint(NoConsecutiveSlotsConstraint(), problem, solution)
-        room_balance = self._evaluate_constraint(RoomBalancingConstraint(), problem, solution)
+        try:
+            # Base room utilization (percentage of capacity used)
+            room_usage = self._calculate_room_usage(solution, problem)
 
-        return {
-            'room_usage': room_usage,
-            'time_spread': time_spread,
-            'student_gaps': student_gaps,
-            'room_balance': room_balance
+            # Time slot distribution (evenness of exam distribution)
+            time_slots = [exam['timeSlot'] for exam in solution]
+            slot_counts = Counter(time_slots)
+            avg_exams = len(solution) / len(slot_counts) if slot_counts else 0
+            variance = sum((count - avg_exams) ** 2 for count in slot_counts.values()) / len(
+                slot_counts) if slot_counts else 0
+            time_spread = min(100, 100 / (1 + variance))
+
+            # Student gap scores
+            student_gaps = self._calculate_student_gaps(solution, problem)
+
+            # Room balance scores
+            room_balance = self._calculate_room_balance(solution, problem)
+
+            return {
+                'room_usage': room_usage if room_usage > 0 else 50.0,  # Default to 50% if calculation fails
+                'time_spread': time_spread if time_spread > 0 else 50.0,
+                'student_gaps': student_gaps if student_gaps > 0 else 50.0,
+                'room_balance': room_balance if room_balance > 0 else 50.0
+            }
+        except Exception as e:
+            print(f"Error in metric calculation: {str(e)}")
+            return None
+
+    def _format_comparison(self, value1, value2, is_time=False):
+        """Format comparison with more informative output"""
+        diff = value2 - value1
+        if abs(diff) < 1.0:
+            # Show actual percentage for equal cases
+            return f"Equal ({value1:.1f}%)"
+
+        base = min(value1, value2) if value1 > 0 and value2 > 0 else max(value1, value2)
+        if base == 0:
+            percent_diff = 100.0
+        else:
+            percent_diff = (abs(diff) / base) * 100.0
+
+        winner = "S1" if (is_time and value1 < value2) or (not is_time and value1 > value2) else "S2"
+        return f"{winner} ({value1:.1f}% vs {value2:.1f}%)"
+
+    def _determine_overall_quality(self, metrics1, metrics2, time1, time2):
+        """Calculate overall quality with more detailed output"""
+        weights = {
+            'time': 0.3,
+            'room_usage': 0.2,
+            'time_spread': 0.15,
+            'student_gaps': 0.2,
+            'room_balance': 0.15
         }
+
+        # Normalize time scores (lower is better)
+        max_time = max(time1, time2)
+        time_score1 = 100 * (1 - time1 / max_time) if max_time > 0 else 100
+        time_score2 = 100 * (1 - time2 / max_time) if max_time > 0 else 100
+
+        score1 = (
+            weights['time'] * time_score1 +
+            weights['room_usage'] * metrics1['room_usage'] +
+            weights['time_spread'] * metrics1['time_spread'] +
+            weights['student_gaps'] * metrics1['student_gaps'] +
+            weights['room_balance'] * metrics1['room_balance']
+        )
+
+        score2 = (
+            weights['time'] * time_score2 +
+            weights['room_usage'] * metrics2['room_usage'] +
+            weights['time_spread'] * metrics2['time_spread'] +
+            weights['student_gaps'] * metrics2['student_gaps'] +
+            weights['room_balance'] * metrics2['room_balance']
+        )
+
+        if abs(score1 - score2) < 1.0:
+            return f"Equal ({score1:.1f}% overall)"
+
+        winner = "S1" if score1 > score2 else "S2"
+        return f"{winner} ({max(score1, score2):.1f}% vs {min(score1, score2):.1f}%)"
+
+    def _create_summary_row(self, statistics):
+        """Create a more informative summary row"""
+        solver1_avg_time = (sum(statistics['solver1_times']) /
+                            len(statistics['solver1_times'])) if statistics['solver1_times'] else 0
+        solver2_avg_time = (sum(statistics['solver2_times']) /
+                            len(statistics['solver2_times'])) if statistics['solver2_times'] else 0
+
+        return [
+            "Summary",
+            f"Wins: {statistics['solver1_wins']} (avg {solver1_avg_time:.1f}ms)",
+            f"Wins: {statistics['solver2_wins']} (avg {solver2_avg_time:.1f}ms)",
+            f"Room Usage: {statistics['solver1_better_room']}-{statistics['solver2_better_room']}-{statistics['equal_room']}",
+            f"Time: {statistics['solver1_wins']}-{statistics['solver2_wins']}-{statistics['ties']}",
+            f"Students: {statistics['solver1_better_student']}-{statistics['solver2_better_student']}-{statistics['equal_student']}",
+            f"Balance: {statistics['solver1_wins']}-{statistics['solver2_wins']}-{statistics['ties']}",
+            f"Overall: S1={statistics['solver1_wins']}, S2={statistics['solver2_wins']}, Ties={statistics['ties']}"
+        ]
 
     def _evaluate_constraint(self, constraint, problem, solution):
         """Convert solution format and evaluate constraint metric"""
@@ -362,9 +449,7 @@ class ComparisonController:
                 metrics1 = self._calculate_detailed_metrics(solution1, problem)
                 metrics2 = self._calculate_detailed_metrics(solution2, problem)
 
-                row_data = self._create_comparison_row(result, solution1, solution2,
-                                                       time1, time2, metrics1, metrics2,
-                                                       statistics)
+                row_data = self._create_comparison_row(result, time1, time2, metrics1, metrics2, statistics)
                 comparison_data.append(row_data)
 
             except Exception as e:
@@ -766,23 +851,6 @@ class ComparisonController:
             'invigilator_load': 0
         }
 
-    def _create_summary_row(self, statistics):
-        """Create a summary row for the comparison table."""
-        return [
-            "Summary",
-            f"Wins: {statistics['solver1_wins']}",
-            f"Wins: {statistics['solver2_wins']}",
-            f"S1: {statistics['solver1_better_room']} vs S2: {statistics['solver2_better_room']}",
-            f"Ties: {statistics['ties']}",
-            f"S1: {statistics['solver1_better_student']} vs S2: {statistics['solver2_better_student']}",
-            f"Room Bal: Equal",
-            f"Prox: Equal",
-            f"Seq: Equal",
-            f"Dur: Equal",
-            f"Inv: Equal",
-            f"Overall Quality"
-        ]
-
     def _calculate_gap_score(self, time_gap: int, room_dist: int) -> float:
         if time_gap == 0:
             return 0  # Conflict
@@ -792,20 +860,6 @@ class ComparisonController:
             return 100  # Ideal gap
         else:
             return max(0, 80 - (time_gap - 2) * 15)  # Longer gap penalty
-
-    def _format_comparison(self, value1, value2, is_time=False):
-        diff = value2 - value1
-        if abs(diff) < 1.0:
-            return f"Equal ({value1:.1f})"
-
-        base = min(value1, value2) if value1 > 0 and value2 > 0 else max(value1, value2)
-        if base == 0:
-            percent_diff = 100.0
-        else:
-            percent_diff = (abs(diff) / base) * 100.0
-
-        winner = "S1" if (is_time and value1 < value2) or (not is_time and value1 > value2) else "S2"
-        return f"{winner} (+{percent_diff:.1f}%)"
 
     def _determine_overall_winner(self, metrics1, metrics2, time1, time2):
         weights = {
