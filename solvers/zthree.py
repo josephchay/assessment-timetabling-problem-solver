@@ -25,13 +25,13 @@ class ZThreeSolver:
             NoConsecutiveSlotsConstraint(),
             MaxExamsPerSlotConstraint(),
             TimeSlotDistributionConstraint(),
-            RoomTransitionTimeConstraint(),
-            DepartmentGroupingConstraint(),
-            RoomBalancingConstraint(),
-            InvigilatorAssignmentConstraint(),
-            PreferredRoomSequenceConstraint(),
-            ExamDurationBalancingConstraint(),
-            ExamDurationBalancingConstraint(),
+            # RoomTransitionTimeConstraint(),
+            # DepartmentGroupingConstraint(),
+            # RoomBalancingConstraint(),
+            # InvigilatorAssignmentConstraint(),
+            # PreferredRoomSequenceConstraint(),
+            # ExamDurationBalancingConstraint(),
+            # ExamDurationBalancingConstraint(),
         ]
 
     @staticmethod

@@ -1,11 +1,11 @@
 from z3 import *
 
-from user_interface import AssessmentSchedulerGUI
+from user_interface import GUIManager
 
 
 def main():
-    app = AssessmentSchedulerGUI()
-    app.mainloop()
+    app = GUIManager()
+    app.run()
 
 
 if __name__ == "__main__":

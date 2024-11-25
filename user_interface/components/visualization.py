@@ -4,13 +4,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import tkinter as tk
+from typing import List, Optional, Dict
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from typing import List
-
-from gui import timetablinggui
 
 from utilities import MetricsAnalyzer
+
+from gui import timetablinggui
 from utilities import SchedulingProblem
 
 
@@ -134,3 +134,97 @@ class TimetableAnalyzer:
         ax.set_title('Timetable Heatmap')
         ax.set_xlabel('Room')
         ax.set_ylabel('Time Slot')
+
+
+class VisualizationManager:
+    """Manages visualization controls and graph generation for the timetabling GUI."""
+
+    def __init__(self, view):
+        """Initialize the visualization manager.
+
+        Args:
+            view: The main GUI view instance
+        """
+        self.view = view
+        self.current_analyzer: Optional[TimetableAnalyzer] = None
+        self.graph_buttons: Dict[str, Dict[str, timetablinggui.GUIButton]] = {}  # Changed to nested dict
+
+    def create_visualization_controls(self, parent_frame: timetablinggui.GUIFrame,
+                                      solution: List[dict],
+                                      problem: SchedulingProblem,
+                                      instance_name: str) -> None:
+        """Create visualization control buttons for a solution.
+
+        Args:
+            parent_frame: The frame to add controls to
+            solution: The timetabling solution
+            problem: The scheduling problem instance
+            instance_name: Name of the problem instance
+        """
+        # Create buttons frame
+        buttons_frame = timetablinggui.GUIFrame(parent_frame)
+        buttons_frame.pack(side="right", padx=5)
+
+        # Initialize buttons dictionary for this instance if it doesn't exist
+        if instance_name not in self.graph_buttons:
+            self.graph_buttons[instance_name] = {}
+
+        # Create analyzer for this solution
+        analyzer = TimetableAnalyzer(problem, solution)
+
+        # Create visualization buttons
+        graph_types = [
+            "Room Utilization",
+            "Time Distribution",
+            "Student Spread",
+            "Timetable Heatmap"
+        ]
+
+        for graph_type in graph_types:
+            # Clear old button if it exists
+            if graph_type in self.graph_buttons[instance_name]:
+                old_button = self.graph_buttons[instance_name][graph_type]
+                if old_button.winfo_exists():
+                    old_button.destroy()
+
+            # Create new button
+            button = timetablinggui.GUIButton(
+                buttons_frame,
+                text=f"View {graph_type}",
+                command=lambda t=graph_type, a=analyzer, n=instance_name: self._show_graph(a, t, n),
+                width=150
+            )
+            button.pack(side="left", padx=2)
+            self.graph_buttons[instance_name][graph_type] = button
+
+    def _show_graph(self, analyzer: TimetableAnalyzer, graph_type: str, instance_name: str) -> None:
+        """Display the selected graph type.
+
+        Args:
+            analyzer: The TimetableAnalyzer instance
+            graph_type: Type of graph to display
+            instance_name: Name of the problem instance
+        """
+        try:
+            print(f"Showing graph {graph_type} for {instance_name}")  # Debug print
+            # Store current analyzer
+            self.current_analyzer = analyzer
+
+            # Create graph window
+            analyzer.create_graph_window(graph_type, instance_name)
+
+        except Exception as e:
+            # Show error in status label
+            self.view.status_label.configure(
+                text=f"Error displaying {graph_type.lower()}: {str(e)}"
+            )
+            print(f"Visualization error for {instance_name}: {str(e)}")
+
+    def clear(self) -> None:
+        """Clear all visualization controls."""
+        for instance_buttons in self.graph_buttons.values():
+            for button in instance_buttons.values():
+                if button.winfo_exists():
+                    button.destroy()
+        self.graph_buttons.clear()
+        self.current_analyzer = None

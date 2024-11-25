@@ -1,1 +1,1 @@
-from .gui import AssessmentSchedulerGUI
+from .manager import GUIManager

@@ -38,14 +38,14 @@ class GurobiSolver(BaseSolver):
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
             MaxExamsPerSlotConstraint(),
-            TimeSlotDistributionConstraint(),
-            RoomTransitionTimeConstraint(),
-            DepartmentGroupingConstraint(),
-            RoomBalancingConstraint(),
-            InvigilatorAssignmentConstraint(),
-            PreferredRoomSequenceConstraint(),
-            ExamDurationBalancingConstraint(),
-            ExamDurationBalancingConstraint(),
+            # TimeSlotDistributionConstraint(),
+            # RoomTransitionTimeConstraint(),
+            # DepartmentGroupingConstraint(),
+            # RoomBalancingConstraint(),
+            # InvigilatorAssignmentConstraint(),
+            # PreferredRoomSequenceConstraint(),
+            # ExamDurationBalancingConstraint(),
+            # ExamDurationBalancingConstraint(),
         ]
 
         self.model.update()

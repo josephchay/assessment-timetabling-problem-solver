@@ -112,8 +112,7 @@ class RoomCapacityConstraint(IConstraint):
                     exam_in_room_time[e] = model.NewBoolVar(f'exam_{e}_in_room_{r}_time_{t}')
                     model.Add(exam_room[e] == r).OnlyEnforceIf(exam_in_room_time[e])
                     model.Add(exam_time[e] == t).OnlyEnforceIf(exam_in_room_time[e])
-                model.Add(sum(problem.exams[e].get_student_count() * exam_in_room_time[e] for e in
-                              range(problem.number_of_exams)) <= problem.rooms[r].capacity)
+                model.Add(sum(problem.exams[e].get_student_count() * exam_in_room_time[e] for e in range(problem.number_of_exams)) <= problem.rooms[r].capacity)
 
     def apply_gurobi(self, model, problem, exam_time, exam_room):
         for t in range(problem.number_of_slots):
@@ -124,9 +123,7 @@ class RoomCapacityConstraint(IConstraint):
                     M = problem.number_of_slots + 1
                     model.addConstr(exam_time[e] - t <= M * (1 - exam_in_room[e]))
                     model.addConstr(exam_room[e] - r <= M * (1 - exam_in_room[e]))
-                model.addConstr(gp.quicksum(
-                    problem.exams[e].get_student_count() * exam_in_room[e] for e in range(problem.number_of_exams)) <=
-                                problem.rooms[r].capacity)
+                model.addConstr(gp.quicksum(problem.exams[e].get_student_count() * exam_in_room[e] for e in range(problem.number_of_exams)) <= problem.rooms[r].capacity)
 
     def apply_cbc(self, model, problem, exam_time, exam_room):
         for t in range(problem.number_of_slots):
@@ -257,8 +254,7 @@ class TimeSlotDistributionConstraint(IConstraint):
     def apply_z3(self, solver, problem, exam_time, exam_room):
         avg_exams_per_slot = problem.number_of_exams / problem.number_of_slots
         for t in range(problem.number_of_slots):
-            exams_in_slot = Sum([If(exam_time[e] == t, 1, 0)
-                                 for e in range(problem.number_of_exams)])
+            exams_in_slot = Sum([If(exam_time[e] == t, 1, 0) for e in range(problem.number_of_exams)])
             solver.add(exams_in_slot <= avg_exams_per_slot + 1)
 
     def apply_ortools(self, model, problem, exam_time, exam_room):
@@ -692,8 +688,7 @@ class PreferredRoomSequenceConstraint(IConstraint):
 
     def apply_z3(self, solver, problem, exam_time, exam_room):
         # Get rooms sorted by capacity
-        sorted_rooms = sorted(range(problem.number_of_rooms),
-                              key=lambda r: problem.rooms[r].capacity)
+        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
         room_indices = {r: i for i, r in enumerate(sorted_rooms)}
 
         for t in range(problem.number_of_slots - 1):
@@ -704,15 +699,13 @@ class PreferredRoomSequenceConstraint(IConstraint):
                         # same or larger than e1's
                         solver.add(
                             Implies(
-                                And(exam_time[e1] == t,
-                                    exam_time[e2] == t + 1),
+                                And(exam_time[e1] == t, exam_time[e2] == t + 1),
                                 room_indices[exam_room[e1]] <= room_indices[exam_room[e2]]
                             )
                         )
 
     def apply_ortools(self, model, problem, exam_time, exam_room):
-        sorted_rooms = sorted(range(problem.number_of_rooms),
-                              key=lambda r: problem.rooms[r].capacity)
+        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
         room_indices = {r: i for i, r in enumerate(sorted_rooms)}
 
         for t in range(problem.number_of_slots - 1):
@@ -722,12 +715,10 @@ class PreferredRoomSequenceConstraint(IConstraint):
                         consecutive = model.NewBoolVar(f'consecutive_{e1}_{e2}_slot_{t}')
                         model.Add(exam_time[e1] == t).OnlyEnforceIf(consecutive)
                         model.Add(exam_time[e2] == t + 1).OnlyEnforceIf(consecutive)
-                        model.Add(room_indices[exam_room[e1]] <=
-                                  room_indices[exam_room[e2]]).OnlyEnforceIf(consecutive)
+                        model.Add(room_indices[exam_room[e1]] <= room_indices[exam_room[e2]]).OnlyEnforceIf(consecutive)
 
     def apply_gurobi(self, model, problem, exam_time, exam_room):
-        sorted_rooms = sorted(range(problem.number_of_rooms),
-                              key=lambda r: problem.rooms[r].capacity)
+        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
         room_indices = {r: i for i, r in enumerate(sorted_rooms)}
 
         for t in range(problem.number_of_slots - 1):
@@ -738,8 +729,7 @@ class PreferredRoomSequenceConstraint(IConstraint):
                         M = problem.number_of_slots + 1
                         model.addConstr(exam_time[e1] - t <= M * (1 - consecutive))
                         model.addConstr(exam_time[e2] - (t + 1) <= M * (1 - consecutive))
-                        model.addConstr(room_indices[exam_room[e1]] <=
-                                        room_indices[exam_room[e2]] + M * (1 - consecutive))
+                        model.addConstr(room_indices[exam_room[e1]] <= room_indices[exam_room[e2]] + M * (1 - consecutive))
 
     def apply_cbc(self, model, problem, exam_time, exam_room):
         sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
@@ -797,8 +787,7 @@ class ExamDurationBalancingConstraint(IConstraint):
                 exams_in_slot.append(is_in_slot)
 
             # Limit total duration in slot
-            model.Add(sum(is_in_slot * default_duration
-                          for is_in_slot in exams_in_slot) <= max_duration_per_slot)
+            model.Add(sum(is_in_slot * default_duration for is_in_slot in exams_in_slot) <= max_duration_per_slot)
 
             # Balance consecutive slots
             if t < problem.number_of_slots - 1:
@@ -980,8 +969,7 @@ class RoomProximityConstraint(IConstraint):
             for e1 in range(problem.number_of_exams):
                 for e2 in range(e1 + 1, problem.number_of_exams):
                     # Variable for concurrent exams
-                    concurrent = model.addVar(vtype=gp.GRB.BINARY,
-                                              name=f'proximity_concurrent_{e1}_{e2}_{t}')
+                    concurrent = model.addVar(vtype=gp.GRB.BINARY, name=f'proximity_concurrent_{e1}_{e2}_{t}')
 
                     # Big M for constraints
                     M = problem.number_of_slots + 1
