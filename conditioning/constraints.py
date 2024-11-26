@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from z3 import Solver, ArithRef, Int, And, Implies, If, Sum, Or, Abs
 import gurobipy as gp
 from pulp import LpVariable, LpBinary, lpSum, LpInteger
@@ -30,6 +32,23 @@ class SingleAssignmentConstraint(IConstraint):
     def apply_cbc(self, model, problem, exam_time, exam_room):
         # Range constraints already handled in variable creation
         pass
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        scores = []
+
+        # Check that each exam is assigned exactly once
+        exam_assignments = defaultdict(int)
+        for exam_id in exam_time.keys():
+            exam_assignments[exam_id] += 1
+
+        # Score based on single assignment
+        for exam_id, count in exam_assignments.items():
+            if count == 1:
+                scores.append(100)  # Perfect score for single assignment
+            else:
+                scores.append(0)  # Zero score for multiple/missing assignments
+
+        return sum(scores) / len(scores) if scores else 0
 
 
 class RoomConflictConstraint(IConstraint):
@@ -83,6 +102,29 @@ class RoomConflictConstraint(IConstraint):
                 model += exam_room[e1] - exam_room[e2] <= M * (1 - same_room)
                 model += exam_room[e2] - exam_room[e1] <= M * (1 - same_room)
                 model += same_time + same_room <= 1
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        scores = []
+
+        # Check each time slot for room conflicts
+        for t in range(problem.number_of_slots):
+            # Get all exams in this time slot
+            slot_exams = [(e_id, exam_room[e_id])
+                          for e_id, slot in exam_time.items() if slot == t]
+
+            # Check for room conflicts
+            room_usage = defaultdict(int)
+            for _, room_id in slot_exams:
+                room_usage[room_id] += 1
+
+            # Score based on conflicts
+            for room_id, count in room_usage.items():
+                if count == 1:
+                    scores.append(100)  # Perfect score for no conflict
+                else:
+                    scores.append(max(0, 100 - (count - 1) * 50))  # Penalty for conflicts
+
+        return sum(scores) / len(scores) if scores else 100
 
 
 class RoomCapacityConstraint(IConstraint):
@@ -138,6 +180,25 @@ class RoomCapacityConstraint(IConstraint):
                     problem.exams[e].get_student_count() * exam_in_room[e] for e in range(problem.number_of_exams)) <= \
                          problem.rooms[r].capacity
 
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Check capacity utilization
+        utilization_scores = []
+        for exam_id, room_id in exam_room.items():
+            room_capacity = problem.rooms[room_id].capacity
+            if room_capacity <= 0:
+                continue
+
+            exam_size = problem.exams[exam_id].get_student_count()
+            utilization = (exam_size / room_capacity) * 100
+
+            # Score better for higher utilization but penalize overcrowding
+            if utilization <= 100:
+                utilization_scores.append(utilization)
+            else:
+                utilization_scores.append(max(0, 100 - (utilization - 100) * 2))
+
+        return sum(utilization_scores) / len(utilization_scores) if utilization_scores else 0
+
 
 class NoConsecutiveSlotsConstraint(IConstraint):
     """
@@ -191,6 +252,31 @@ class NoConsecutiveSlotsConstraint(IConstraint):
                     model += exam_time[exam1] - exam_time[exam2] <= -2 + M * not_consecutive
                     model += exam_time[exam2] - exam_time[exam1] <= -2 + M * (1 - not_consecutive)
 
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Score based on gaps between student exams
+        student_scores = []
+
+        for student in range(problem.total_students):
+            student_exams = [exam.id for exam in problem.exams if student in exam.students]
+            exam_times = sorted([exam_time[e] for e in student_exams if e in exam_time])
+
+            if len(exam_times) <= 1:
+                continue
+
+            # Calculate gaps between consecutive exams
+            gaps = [exam_times[i + 1] - exam_times[i] for i in range(len(exam_times) - 1)]
+
+            # Score each gap
+            for gap in gaps:
+                if gap == 0:  # Same slot
+                    student_scores.append(0)
+                elif gap == 1:  # Consecutive slots
+                    student_scores.append(50)
+                else:  # Good gap
+                    student_scores.append(100)
+
+        return sum(student_scores) / len(student_scores) if student_scores else 100
+
 
 class MaxExamsPerSlotConstraint(IConstraint):
     """
@@ -238,6 +324,25 @@ class MaxExamsPerSlotConstraint(IConstraint):
                 model += t - exam_time[e] <= M * (1 - is_in_slot)
                 exam_in_slot.append(is_in_slot)
             model += lpSum(exam_in_slot) <= max_concurrent
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        max_allowed = 3  # Maximum allowed exams per slot
+        scores = []
+
+        # Count exams per time slot
+        slot_counts = defaultdict(int)
+        for slot in exam_time.values():
+            slot_counts[slot] += 1
+
+        # Score each time slot
+        for slot, count in slot_counts.items():
+            if count <= max_allowed:
+                scores.append(100)  # Perfect score if within limit
+            else:
+                # Penalty for exceeding limit
+                scores.append(max(0, 100 - (count - max_allowed) * 25))
+
+        return sum(scores) / len(scores) if scores else 100
 
 
 """
@@ -288,6 +393,20 @@ class TimeSlotDistributionConstraint(IConstraint):
                 model += exam_time[e] - t <= M * (1 - is_in_slot)
                 exam_in_slot.append(is_in_slot)
             model += lpSum(exam_in_slot) <= avg_exams_per_slot + 1
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Count exams per slot
+        slot_counts = defaultdict(int)
+        for slot in exam_time.values():
+            slot_counts[slot] += 1
+
+        # Calculate distribution score
+        avg_exams = len(exam_time) / problem.number_of_slots
+        variations = [abs(count - avg_exams) for count in slot_counts.values()]
+        max_variation = max(variations) if variations else 0
+
+        # Score based on how evenly distributed the exams are
+        return max(0, 100 - (max_variation * 20))
 
 
 class RoomTransitionTimeConstraint(IConstraint):
@@ -347,6 +466,31 @@ class RoomTransitionTimeConstraint(IConstraint):
                 model += exam_time[e2] - exam_time[e1] >= min_transition_time - M * (1 - time_order)
                 model += exam_time[e1] - exam_time[e2] >= min_transition_time - M * time_order
 
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Score based on transition time between exams in same room
+        transition_scores = []
+
+        # Group exams by room
+        room_exams = defaultdict(list)
+        for exam_id, room_id in exam_room.items():
+            room_exams[room_id].append((exam_time[exam_id], exam_id))
+
+        # Check transitions for each room
+        for room_schedule in room_exams.values():
+            room_schedule.sort()  # Sort by time
+
+            for i in range(len(room_schedule) - 1):
+                time_gap = room_schedule[i + 1][0] - room_schedule[i][0]
+
+                if time_gap == 0:  # No transition time
+                    transition_scores.append(0)
+                elif time_gap == 1:  # Minimum transition time
+                    transition_scores.append(100)
+                else:  # More than needed
+                    transition_scores.append(max(50, 100 - (time_gap - 1) * 10))
+
+        return sum(transition_scores) / len(transition_scores) if transition_scores else 100
+
 
 class DepartmentGroupingConstraint(IConstraint):
     """
@@ -404,6 +548,31 @@ class DepartmentGroupingConstraint(IConstraint):
                     model += exam_room[e1] - exam_room[e2] <= 2 + M * (1 - same_time)
                     model += exam_room[e2] - exam_room[e1] <= 2 + M * (1 - same_time)
 
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Simulate departments by grouping exams into ranges
+        dept_size = max(1, problem.number_of_exams // 3)  # Simulate 3 departments
+        scores = []
+
+        # For each time slot, check room proximity of "department" exams
+        for t in range(problem.number_of_slots):
+            # Get exams in this time slot
+            slot_exams = [(e_id, r_id) for e_id, t_id in exam_time.items()
+                          if t_id == t for r_id in [exam_room[e_id]]]
+
+            # Score based on room proximity within departments
+            for i, (exam1, room1) in enumerate(slot_exams):
+                for exam2, room2 in slot_exams[i + 1:]:
+                    # Consider exams in same "department" if within same ID range
+                    dept1 = exam1 // dept_size
+                    dept2 = exam2 // dept_size
+
+                    if dept1 == dept2:
+                        # Score based on room proximity
+                        room_distance = abs(room1 - room2)
+                        scores.append(max(0, 100 - (room_distance * 25)))
+
+        return sum(scores) / len(scores) if scores else 100
+
 
 class RoomBalancingConstraint(IConstraint):
     """
@@ -446,13 +615,27 @@ class RoomBalancingConstraint(IConstraint):
         for r in range(problem.number_of_rooms):
             room_exams = []
             for e in range(problem.number_of_exams):
-                is_in_room = LpVariable(f'balance_exam_{e}_room_{r}',
-                                        cat=LpBinary)
+                is_in_room = LpVariable(f'balance_exam_{e}_room_{r}', cat=LpBinary)
                 M = problem.number_of_slots + 1
                 model += exam_room[e] - r <= M * (1 - is_in_room)
                 model += r - exam_room[e] <= M * (1 - is_in_room)
                 room_exams.append(is_in_room)
             model += lpSum(room_exams) <= avg_exams_per_room + 1
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Count usage of each room
+        room_usage = defaultdict(int)
+        for room_id in exam_room.values():
+            room_usage[room_id] += 1
+
+        if not room_usage:
+            return 0
+
+        # Calculate how evenly rooms are used
+        avg_usage = sum(room_usage.values()) / len(room_usage)
+        max_deviation = max(abs(usage - avg_usage) for usage in room_usage.values())
+
+        return max(0, 100 - (max_deviation * 15))
 
 
 class InvigilatorAssignmentConstraint(IConstraint):
@@ -678,6 +861,46 @@ class InvigilatorAssignmentConstraint(IConstraint):
                     concurrent_exams.append(is_in_slot)
                 model += lpSum(concurrent_exams) <= 1
 
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        if not hasattr(problem, 'invigilators') or not problem.invigilators:
+            return 100  # No invigilator constraints
+
+        scores = []
+
+        # Simulate invigilator assignments based on rooms
+        # Assumption: Each room needs one invigilator
+        invigilator_assignments = defaultdict(list)
+
+        # Assign invigilators to rooms (simple greedy assignment)
+        for exam_id, slot in exam_time.items():
+            room = exam_room[exam_id]
+            invigilator_id = room % len(problem.invigilators)  # Simple assignment strategy
+            invigilator_assignments[invigilator_id].append(slot)
+
+        # Score each invigilator's schedule
+        for invig_id, slots in invigilator_assignments.items():
+            invigilator = problem.invigilators[invig_id]
+
+            # Check workload
+            if len(slots) > invigilator.max_exams_per_day:
+                scores.append(max(0, 100 - (len(slots) - invigilator.max_exams_per_day) * 25))
+            else:
+                scores.append(100)
+
+            # Check unavailable slots
+            for slot in slots:
+                if slot in invigilator.unavailable_slots:
+                    scores.append(0)  # Severe penalty for using unavailable slots
+
+            # Check consecutive assignments
+            sorted_slots = sorted(slots)
+            for i in range(len(sorted_slots) - 1):
+                if sorted_slots[i + 1] - sorted_slots[i] == 1:
+                    scores.append(50)  # Penalty for consecutive slots
+                else:
+                    scores.append(100)
+
+        return sum(scores) / len(scores) if scores else 100
 
 class PreferredRoomSequenceConstraint(IConstraint):
     """
@@ -744,6 +967,40 @@ class PreferredRoomSequenceConstraint(IConstraint):
                         model += exam_time[e1] - t <= M * (1 - consecutive)
                         model += exam_time[e2] - (t + 1) <= M * (1 - consecutive)
                         model += room_indices[exam_room[e1]] <= room_indices[exam_room[e2]] + M * (1 - consecutive)
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        # Sort rooms by capacity
+        sorted_rooms = sorted(range(problem.number_of_rooms),
+                              key=lambda r: problem.rooms[r].capacity)
+        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
+
+        sequence_scores = []
+
+        # Check each pair of consecutive time slots
+        for t in range(problem.number_of_slots - 1):
+            current_slot_exams = [(e_id, exam_room[e_id])
+                                  for e_id, slot in exam_time.items() if slot == t]
+            next_slot_exams = [(e_id, exam_room[e_id])
+                               for e_id, slot in exam_time.items() if slot == t + 1]
+
+            if not current_slot_exams or not next_slot_exams:
+                continue
+
+            # Get room indices for both slots
+            current_indices = [room_indices[r] for _, r in current_slot_exams]
+            next_indices = [room_indices[r] for _, r in next_slot_exams]
+
+            # Perfect score if all current rooms are smaller/equal to next rooms
+            if max(current_indices) <= min(next_indices):
+                sequence_scores.append(100)
+            else:
+                # Count sequence violations
+                violations = sum(1 for c in current_indices
+                                 for n in next_indices if c > n)
+                max_violations = len(current_indices) * len(next_indices)
+                sequence_scores.append(100 * (1 - violations / max_violations))
+
+        return sum(sequence_scores) / len(sequence_scores) if sequence_scores else 100
 
 
 class ExamDurationBalancingConstraint(IConstraint):
@@ -874,6 +1131,33 @@ class ExamDurationBalancingConstraint(IConstraint):
                           lpSum(is_in_next * default_duration for is_in_next in next_slot_exams) ==
                           diff_plus - diff_minus)
                 model += diff_plus + diff_minus <= 60
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+            # Simulate exam duration based on student count
+            # Assumption: More students = longer exam
+            def get_exam_duration(exam_id):
+                student_count = problem.exams[exam_id].get_student_count()
+                return min(180, 60 + student_count * 2)  # Base 60 mins + 2 mins per student, max 3 hours
+
+            # Calculate total duration per time slot
+            slot_durations = defaultdict(int)
+            for exam_id, slot in exam_time.items():
+                slot_durations[slot] += get_exam_duration(exam_id)
+
+            if not slot_durations:
+                return 100
+
+            # Calculate balance scores
+            avg_duration = sum(slot_durations.values()) / len(slot_durations)
+            balance_scores = []
+
+            # Score each slot based on deviation from average
+            for duration in slot_durations.values():
+                deviation = abs(duration - avg_duration)
+                # Convert to percentage score (larger deviations = lower scores)
+                balance_scores.append(max(0, 100 - (deviation / 30)))  # 30 mins deviation = 1 point
+
+            return sum(balance_scores) / len(balance_scores)
 
 
 class RoomProximityConstraint(IConstraint):
