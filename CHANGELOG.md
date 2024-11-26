@@ -21,8 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added DEAPSolver for alternative solution.
 - Feature - Added foundation functionality for results comparison between multiple solvers.
 - Feature - Added 8 more unique extraordinary constraints for the system.
-- Feature - Added evaluation metrics for all the original and additional constraints.
-- Feature - Added login and registration methods for user and invigilator with privilege management.
+- Feature - Added full-fledge evaluation metrics for all the original and additional constraints.
+- Feature - Added full-fledge login and registration methods for user and invigilator with privilege management.
+- Feature - Added invigilator privilege of creating student accounts, whereby students are not granted such privileges.
 
 ### Changed
 - Updated statistics visualization buttons and their information display options.
@@ -34,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored the GUIManager into multiple clean class codes.
 - Beautified and made statistics visualization buttons more beautiful.
 - Beautified and perfected the UI design for the GUI results table for display.
+-
 
 ### Refactoring
 - Updated code structure to be more clean through Separation of Concerns.

@@ -15,37 +15,53 @@ class RegistrationFrame(timetablinggui.GUIFrame):
         self.title = timetablinggui.GUILabel(
             label_frame,
             text="Create Student Account",
-            font=("Arial", 24, "bold")  # Using standard font
+            font=("Arial", 24, "bold")
         )
         self.title.pack()
 
         self.subtitle = timetablinggui.GUILabel(
             label_frame,
             text="Enter student details below",
-            font=("Arial", 14)  # Using standard font
+            font=("Arial", 14)
         )
         self.subtitle.pack()
 
-        # Username
-        self.username_label = timetablinggui.GUILabel(
+        # Full Name
+        self.name_label = timetablinggui.GUILabel(
             self,
-            text="Student Username",
-            font=("Arial", 12)  # Using standard font
+            text="Student Full Name",
+            font=("Arial", 12)
         )
-        self.username_label.pack(pady=(20, 0), padx=30, anchor="w")
+        self.name_label.pack(pady=(20, 0), padx=30, anchor="w")
 
-        self.user_name_entry = timetablinggui.GUIEntry(
+        self.name_entry = timetablinggui.GUIEntry(
             self,
-            placeholder_text="Enter student name",
+            placeholder_text="Enter student's full name",
             width=300
         )
-        self.user_name_entry.pack(pady=(5, 10), padx=30)
+        self.name_entry.pack(pady=(5, 10), padx=30)
+
+        # Generated Username Display
+        self.username_label = timetablinggui.GUILabel(
+            self,
+            text="Generated Username",
+            font=("Arial", 12)
+        )
+        self.username_label.pack(pady=(10, 0), padx=30, anchor="w")
+
+        self.username_display = timetablinggui.GUILabel(
+            self,
+            text="Username will be generated",
+            font=("Arial", 12),
+            text_color="gray"
+        )
+        self.username_display.pack(pady=(5, 10), padx=30)
 
         # Password
         self.password_label = timetablinggui.GUILabel(
             self,
             text="Password",
-            font=("Arial", 12)  # Using standard font
+            font=("Arial", 12)
         )
         self.password_label.pack(pady=(10, 0), padx=30, anchor="w")
 
@@ -75,10 +91,39 @@ class RegistrationFrame(timetablinggui.GUIFrame):
         )
         self.error_label.pack(pady=10)
 
+        # Bind the name entry to update username preview
+        self.name_entry.bind('<KeyRelease>', self._update_username_preview)
+
+    def _generate_username(self, full_name: str) -> str:
+        # Remove spaces and convert to lowercase
+        username = "student_" + "".join(full_name.lower().split())
+        return username
+
+    def _update_username_preview(self, event=None):
+        full_name = self.name_entry.get().strip()
+        if full_name:
+            username = self._generate_username(full_name)
+            self.username_display.configure(
+                text=username,
+                text_color="black"
+            )
+        else:
+            self.username_display.configure(
+                text="Username will be generated",
+                text_color="gray"
+            )
+
     def _handle_register(self):
-        name = self.user_name_entry.get().strip()
+        full_name = self.name_entry.get().strip()
         password = self.password_entry.get().strip()
-        self.register_callback(name, password)
+
+        if not full_name or not password:
+            self.show_error("Please fill in all fields")
+            return
+
+        username = self._generate_username(full_name)
+        # Pass name, username, and password to callback
+        self.register_callback(username, password, full_name)
 
     def show_error(self, message, is_success=False):
         self.error_label.configure(
@@ -87,6 +132,10 @@ class RegistrationFrame(timetablinggui.GUIFrame):
         )
 
     def clear_fields(self):
-        self.user_name_entry.delete(0, 'end')
+        self.name_entry.delete(0, 'end')
         self.password_entry.delete(0, 'end')
+        self.username_display.configure(
+            text="Username will be generated",
+            text_color="gray"
+        )
         self.error_label.configure(text="")

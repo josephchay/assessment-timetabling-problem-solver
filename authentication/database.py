@@ -63,7 +63,7 @@ class Database:
         with open(self.login_history_file, 'w') as f:
             json.dump(history, f, indent=4)
 
-    def add_user(self, username: str, password: str, user_type: str) -> bool:
+    def add_user(self, username: str, password: str, user_type: str, name: str = None) -> bool:
         users = self._load_users()
 
         if username in users:
@@ -71,7 +71,8 @@ class Database:
 
         users[username] = {
             "password": self._hash_256(password),
-            "type": user_type
+            "type": user_type,
+            "name": name
         }
 
         self._save_users(users)

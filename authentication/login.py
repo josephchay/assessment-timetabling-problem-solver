@@ -156,7 +156,7 @@ class LoginWindow(timetablinggui.GUIToplevel):
     def show_invigilator_options(self):
         self.login_frame.pack_forget()
         self.registration_frame.pack_forget()
-        self.invigilator_options_frame.update_welcome_message(self.user)
+        self.invigilator_options_frame.update_welcome_message(self.user_name)
         self.invigilator_options_frame.pack(fill="both", expand=True)
 
     def handle_login(self, username: str, password: str):
@@ -181,8 +181,8 @@ class LoginWindow(timetablinggui.GUIToplevel):
         else:
             self.login_frame.show_error("Invalid username or password")
 
-    def handle_register(self, username: str, password: str):
-        if not username or not password:
+    def handle_register(self, username: str, password: str, full_name: str):
+        if not username or not password or not full_name:
             self.registration_frame.show_error("Please fill in all fields")
             return
 
@@ -190,15 +190,16 @@ class LoginWindow(timetablinggui.GUIToplevel):
             self.registration_frame.show_error("Password must be at least 6 characters")
             return
 
-        if len(username) < 3:
-            self.registration_frame.show_error("Username must be at least 3 characters")
+        if len(full_name) < 3:
+            self.registration_frame.show_error("Name must be at least 3 characters")
             return
 
-        if not username.isalnum():
-            self.registration_frame.show_error("Username must contain only letters and numbers")
+        # Only allow letters and spaces in full name
+        if not all(c.isalpha() or c.isspace() for c in full_name):
+            self.registration_frame.show_error("Name can only contain letters and spaces")
             return
 
-        if self.db.add_user(username, password, "student"):
+        if self.db.add_user(username, password, "student", full_name):
             self.registration_frame.show_error("Student registration successful!", True)
             self.after(1500, self.show_invigilator_options)
         else:
