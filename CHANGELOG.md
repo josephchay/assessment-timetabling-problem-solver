@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved the performance and metrics legend guide for multi-solvers' solution panelling logic and interface.
 - Refactored the GUIManager into multiple clean class codes.
 - Beautified and made statistics visualization buttons more beautiful.
+- Beautified and perfected the UI design for the GUI results table for display.
 
 ### Refactoring
 - Updated code structure to be more clean through Separation of Concerns.

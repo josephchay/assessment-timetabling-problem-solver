@@ -1129,35 +1129,35 @@ class ComparisonController:
 
     Original Constraints:
     • Room Usage: {statistics['solver1_better_room']} vs {statistics['solver2_better_room']} ({statistics['equal_room']} equal)
-      (How efficiently room capacity is utilized)
+      (Description: How efficiently room capacity is utilized)
 
     • Time Spread: {statistics['solver1_better_time_spread']} vs {statistics['solver2_better_time_spread']} ({statistics['equal_time_spread']} equal)
-      (How evenly exams are distributed across time slots)
+      (Description: How evenly exams are distributed across time slots)
 
     • Student Gaps: {statistics['solver1_better_student']} vs {statistics['solver2_better_student']} ({statistics['equal_student']} equal)
-      (How well student exam times are spaced)
+      (Description: How well student exam times are spaced)
 
     • Room Balance: {statistics['solver1_better_balance']} vs {statistics['solver2_better_balance']} ({statistics['equal_balance']} equal)
-      (How evenly rooms are used across time slots)
+      (Description: How evenly rooms are used across time slots)
 
     Additional Constraints:
     • Time Distribution: {statistics['solver1_better_distribution']} vs {statistics['solver2_better_distribution']} ({statistics['equal_distribution']} equal)
-      (Exam spread across available time slots)
+      (Description: Exam spread across available time slots)
 
     • Transition Time: {statistics['solver1_better_transition']} vs {statistics['solver2_better_transition']} ({statistics['equal_transition']} equal)
-      (Room changeover time between exams)
+      (Description: Room changeover time between exams)
 
     • Department Grouping: {statistics['solver1_better_department']} vs {statistics['solver2_better_department']} ({statistics['equal_department']} equal)
-      (Similar exams scheduled together)
+      (Description: Similar exams scheduled together)
 
     • Room Sequence: {statistics['solver1_better_sequence']} vs {statistics['solver2_better_sequence']} ({statistics['equal_sequence']} equal)
-      (Efficient room allocation ordering)
+      (Description: Efficient room allocation ordering)
 
     • Duration Balance: {statistics['solver1_better_duration']} vs {statistics['solver2_better_duration']} ({statistics['equal_duration']} equal)
-      (Exam duration distribution)
+      (Description: Exam duration distribution)
 
     • Invigilator Load: {statistics['solver1_better_invigilator']} vs {statistics['solver2_better_invigilator']} ({statistics['equal_invigilator']} equal)
-      (Staff workload distribution)"""
+      (Description: Staff workload distribution)"""
 
     def _create_metrics_frame(self, parent):
         frame = timetablinggui.GUIFrame(
@@ -1179,34 +1179,34 @@ class ComparisonController:
     def _create_metrics_text(self):
         return """Metrics Guide:
     • Room Usage: Higher % = better room capacity utilization
-      (e.g., filling 80 seats in a 100-seat room)
+      (Ideal: e.g., filling 80 seats in a 100-seat room)
 
     • Time Spread: Higher = more even exam distribution
-      (avoiding too many exams in same time slot)
+      (Ideal: Avoiding too many exams in same time slot)
 
     • Student Gaps: Higher = better spacing between exams
-      (avoiding back-to-back exams for students)
+      (Ideal: Avoiding back-to-back exams for students)
 
     • Room Balance: Higher = more consistent room usage
-      (using all rooms evenly rather than overusing some)
+      (Ideal: Using all rooms evenly rather than overusing some)
 
     • Time Distribution: Higher = better spread of exams
-      (maximizing use of available time slots)
+      (Ideal: Maximizing use of available time slots)
 
     • Transition Time: Higher = better room changeover times
-      (adequate gaps between exams in same room)
+      (Ideal: Adequate gaps between exams in same room)
 
     • Department Grouping: Higher = better exam grouping
-      (related exams scheduled close together)
+      (Ideal: Related exams scheduled close together)
 
     • Room Sequence: Higher = more efficient room allocation
-      (optimal ordering of room assignments)
+      (Ideal: Optimal ordering of room assignments)
 
     • Duration Balance: Higher = better exam time distribution
-      (balanced duration of exams across slots)
+      (Ideal: Balanced duration of exams across slots)
 
     • Invigilator Load: Higher = better staff workload balance
-      (even distribution of supervision duties)
+      (Ideal: Even distribution of supervision duties)
 
     • Quality: Combined score of all metrics above
-      (weighted average of key performance indicators)"""
+      (Ideal: Weighted average of key performance indicators)"""
