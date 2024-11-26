@@ -554,36 +554,6 @@ class ComparisonController:
             'equal_invigilator': 0
         }
 
-    def _format_performance_text(self, solver1_name, solver2_name, solver1_avg_time, solver2_avg_time, statistics):
-        return f"""Performance Analysis:
-    • {solver1_name} vs {solver2_name}
-    • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
-    • Overall Wins: {statistics['solver1_wins']} vs {statistics['solver2_wins']} ({statistics['ties']} ties)
-
-    Original Constraints:
-    • Room Usage: {statistics['solver1_better_room']} vs {statistics['solver2_better_room']} ({statistics['equal_room']} equal)
-      (How efficiently room capacity is utilized)
-    • Time Spread: {statistics['solver1_better_time_spread']} vs {statistics['solver2_better_time_spread']} ({statistics['equal_time_spread']} equal)
-      (How evenly exams are distributed across time slots)
-    • Student Gaps: {statistics['solver1_better_student']} vs {statistics['solver2_better_student']} ({statistics['equal_student']} equal)
-      (How well student exam times are spaced)
-    • Room Balance: {statistics['solver1_better_balance']} vs {statistics['solver2_better_balance']} ({statistics['equal_balance']} equal)
-      (How evenly rooms are used across time slots)
-
-    Additional Constraints:
-    • Time Distribution: {statistics['solver1_better_distribution']} vs {statistics['solver2_better_distribution']} ({statistics['equal_distribution']} equal)
-      (Exam spread across available time slots)
-    • Transition Time: {statistics['solver1_better_transition']} vs {statistics['solver2_better_transition']} ({statistics['equal_transition']} equal)
-      (Room changeover time between exams)
-    • Department Grouping: {statistics['solver1_better_department']} vs {statistics['solver2_better_department']} ({statistics['equal_department']} equal)
-      (Similar exams scheduled together)
-    • Room Sequence: {statistics['solver1_better_sequence']} vs {statistics['solver2_better_sequence']} ({statistics['equal_sequence']} equal)
-      (Efficient room allocation ordering)
-    • Duration Balance: {statistics['solver1_better_duration']} vs {statistics['solver2_better_duration']} ({statistics['equal_duration']} equal)
-      (Exam duration distribution)
-    • Invigilator Load: {statistics['solver1_better_invigilator']} vs {statistics['solver2_better_invigilator']} ({statistics['equal_invigilator']} equal)
-      (Staff workload distribution)"""
-
     def _prepare_comparison_data(self, results, statistics):
         comparison_data = []
         for result in results:
@@ -691,14 +661,10 @@ class ComparisonController:
         # Additional constraints
         self._update_time_distribution_statistics(self._format_comparison(metrics1['time_distribution'], metrics2['time_distribution']), statistics)
         self._update_transition_time_statistics(self._format_comparison(metrics1['transition_time'], metrics2['transition_time']), statistics)
-        self._update_department_statistics(
-            self._format_comparison(metrics1['department_grouping'], metrics2['department_grouping']), statistics)
-        self._update_sequence_statistics(
-            self._format_comparison(metrics1['room_sequence'], metrics2['room_sequence']), statistics)
-        self._update_duration_statistics(
-            self._format_comparison(metrics1['duration_balance'], metrics2['duration_balance']), statistics)
-        self._update_invigilator_statistics(
-            self._format_comparison(metrics1['invigilator_load'], metrics2['invigilator_load']), statistics)
+        self._update_department_statistics(self._format_comparison(metrics1['department_grouping'], metrics2['department_grouping']), statistics)
+        self._update_sequence_statistics(self._format_comparison(metrics1['room_sequence'], metrics2['room_sequence']), statistics)
+        self._update_duration_statistics(self._format_comparison(metrics1['duration_balance'], metrics2['duration_balance']), statistics)
+        self._update_invigilator_statistics(self._format_comparison(metrics1['invigilator_load'], metrics2['invigilator_load']), statistics)
 
     def _update_time_spread_statistics(self, comparison, statistics):
         if "S1" in comparison:
@@ -784,16 +750,14 @@ class ComparisonController:
 
         for metric_key, _ in metrics_to_compare:
             if metric_key in metrics1 and metric_key in metrics2:
-                row_data.append(self._format_comparison(
-                    metrics1[metric_key], metrics2[metric_key])
-                )
+                row_data.append(self._format_comparison(metrics1[metric_key], metrics2[metric_key]))
             else:
                 row_data.append("N/A")
 
         return row_data
 
     def _create_table_widget(self, comparison_data, solver1_name, solver2_name, statistics, headers):
-        """Create the table widget with horizontal scrolling below the table."""
+        """Create a table with full-width cells and horizontal scrolling."""
         print(f"Creating table with {len(comparison_data)} rows and {len(headers)} columns")
         print(f"Headers: {headers}")
         print(f"First row sample: {comparison_data[0] if comparison_data else 'No data'}")
@@ -804,34 +768,44 @@ class ComparisonController:
 
         # Create main container frame
         main_container = timetablinggui.GUIFrame(self.view.all_scroll)
-        main_container.pack(fill="both", expand=True)
+        main_container.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Create scrollable container
-        scroll_container = timetablinggui.GUIFrame(main_container)
-        scroll_container.pack(fill="both", expand=True, padx=10, pady=10)
+        # Create frame for the table and scrollbar
+        table_container = timetablinggui.GUIFrame(main_container)
+        table_container.pack(fill="both", expand=True)
 
-        # Create canvas for horizontal scrolling
-        canvas = timetablinggui.GUICanvas(scroll_container)
-        canvas.pack(fill="both", expand=True)  # Fill the entire container first
+        # Calculate total width needed based on content
+        all_data = [headers] + comparison_data
+        col_widths = []
 
-        # Create horizontal scrollbar BELOW the canvas
-        scrollbar = timetablinggui.GUIScrollbar(
-            scroll_container,
-            orientation="horizontal",
-            command=canvas.xview
-        )
-        scrollbar.pack(fill="x")  # Pack at bottom, fill horizontally
+        # Calculate required width for each column
+        for col in range(len(headers)):
+            # Get maximum width needed for this column
+            col_content = [str(row[col]) for row in all_data]
+            max_width = max(len(content) for content in col_content)
+            col_widths.append(max_width * 10)  # Approximate pixel width per character
 
-        # Configure canvas
-        canvas.configure(xscrollcommand=scrollbar.set)
+        # Total width needed
+        total_width = sum(col_widths) + (len(headers) * 20)  # Add padding
+
+        # Create a GUICanvas for scrolling
+        canvas = timetablinggui.GUICanvas(table_container)
+        scrollbar = timetablinggui.GUIScrollbar(table_container, orientation="horizontal", command=canvas.xview)
 
         # Create frame inside canvas
-        table_frame = timetablinggui.GUIFrame(canvas)
-        canvas_window = canvas.create_window((0, 0), window=table_frame, anchor="nw", width=canvas.winfo_width())
+        inner_frame = timetablinggui.GUIFrame(canvas)
 
-        # Create the table
+        # Configure scrolling
+        canvas.configure(xscrollcommand=scrollbar.set)
+        canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+
+        # Pack canvas and scrollbar
+        canvas.pack(side="top", fill="both", expand=True)
+        scrollbar.pack(side="bottom", fill="x")
+
+        # Create the table inside the inner frame
         table = timetablinggui.TableManager(
-            master=table_frame,
+            master=inner_frame,
             row=len(comparison_data) + 1,
             column=len(headers),
             values=[headers] + comparison_data,
@@ -840,20 +814,21 @@ class ComparisonController:
         )
         table.pack(fill="both", expand=True)
 
-        # Update scroll region after table is created
-        table_frame.update_idletasks()
-        table_width = table_frame.winfo_reqwidth()
-        table_height = table_frame.winfo_reqheight()
+        # Configure the canvas scroll region after the table is created
+        inner_frame.update_idletasks()
+        table_width = inner_frame.winfo_reqwidth()
+        table_height = inner_frame.winfo_reqheight()
 
-        # Configure canvas scrolling
+        # Set up scroll region and canvas size
         canvas.configure(
             scrollregion=(0, 0, table_width, table_height),
-            height=table_height  # Set fixed height to match table
+            width=min(table_width, 1100),  # Limit initial view width
+            height=table_height
         )
 
-        # Create analysis section below table
+        # Create analysis section
         analysis_frame = timetablinggui.GUIFrame(main_container)
-        analysis_frame.pack(fill="x", padx=10, pady=10)
+        analysis_frame.pack(fill="x", pady=10)
 
         # Add performance analysis
         performance_frame = self._create_performance_frame(
@@ -864,17 +839,12 @@ class ComparisonController:
         performance_frame.pack(side="left", expand=True, fill="both", padx=(0, 5))
         metrics_frame.pack(side="left", expand=True, fill="both", padx=(5, 0))
 
-        # Bind mouse wheel for horizontal scrolling
+        # Bind mousewheel for horizontal scrolling with shift
         def _on_mousewheel(event):
-            canvas.xview_scroll(-int(event.delta / 120), "units")
+            if event.state & 4:  # Check if shift is held down
+                canvas.xview_scroll(-int(event.delta / 120), "units")
 
-        canvas.bind_all("<Shift-MouseWheel>", _on_mousewheel)
-
-        # Function to handle canvas/table resize
-        def _on_canvas_configure(event):
-            canvas.itemconfig(canvas_window, width=event.width)
-
-        canvas.bind('<Configure>', _on_canvas_configure)
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         return main_container
 
@@ -882,73 +852,11 @@ class ComparisonController:
         analysis_section = timetablinggui.GUIFrame(container_frame)
         analysis_section.pack(fill="x", padx=10, pady=(20, 5))
 
-        performance_frame = self._create_performance_frame(
-            analysis_section, solver1_name, solver2_name, statistics
-        )
+        performance_frame = self._create_performance_frame(analysis_section, solver1_name, solver2_name, statistics)
         metrics_frame = self._create_metrics_frame(analysis_section)
 
         performance_frame.pack(side="left", expand=True, fill="both", padx=(0, 5))
         metrics_frame.pack(side="left", expand=True, fill="both", padx=(5, 0))
-
-    def _create_performance_frame(self, parent, solver1_name, solver2_name, statistics):
-        frame = timetablinggui.GUIFrame(
-            parent,
-            corner_radius=10,
-            fg_color="gray20"
-        )
-
-        solver1_avg_time = (sum(statistics['solver1_times']) /
-                            len(statistics['solver1_times'])) if statistics['solver1_times'] else 0
-        solver2_avg_time = (sum(statistics['solver2_times']) /
-                            len(statistics['solver2_times'])) if statistics['solver2_times'] else 0
-
-        performance_text = self._format_performance_text(
-            solver1_name, solver2_name,
-            solver1_avg_time, solver2_avg_time,
-            statistics
-        )
-
-        label = timetablinggui.GUILabel(
-            frame,
-            text=performance_text,
-            font=timetablinggui.GUIFont(size=12),
-            justify="left"
-        )
-        label.pack(side="left", expand=True, fill="both", padx=15, pady=15)
-
-        return frame
-
-    def _create_metrics_frame(self, parent):
-        frame = timetablinggui.GUIFrame(
-            parent,
-            corner_radius=10,
-            fg_color="gray20"
-        )
-
-        metrics_text = """Metrics Guide:
-    • Room Usage: Higher % = better room capacity utilization
-      (e.g., filling 80 seats in a 100-seat room)
-
-    • Time Spread: Higher = more even exam distribution
-      (avoiding too many exams in same time slot)
-
-    • Student Gaps: Higher = better spacing between exams
-      (avoiding back-to-back exams for students)
-
-    • Room Balance: Higher = more consistent room usage
-      (using all rooms evenly rather than overusing some)
-
-    • Quality: Combined score of all metrics above"""
-
-        label = timetablinggui.GUILabel(
-            frame,
-            text=metrics_text,
-            font=timetablinggui.GUIFont(size=12),
-            justify="left"
-        )
-        label.pack(side="left", expand=True, fill="both", padx=15, pady=15)
-
-        return frame
 
     def _calculate_detailed_metrics(self, solution, problem):
         if solution is None:
@@ -1022,9 +930,7 @@ class ComparisonController:
         # Build student schedules
         for exam in solution:
             for student in problem.exams[exam['examId']].students:
-                student_schedules[student].append(
-                    (exam['timeSlot'], exam['room'])
-                )
+                student_schedules[student].append((exam['timeSlot'], exam['room']))
 
         gap_scores = []
         for schedule in student_schedules.values():
@@ -1090,14 +996,12 @@ class ComparisonController:
                         proximity_score = max(0, 100 - (dist * 25))
                         proximity_scores.append(proximity_score)
 
-        return (sum(proximity_scores) / len(proximity_scores)
-                if proximity_scores else 100)
+        return sum(proximity_scores) / len(proximity_scores) if proximity_scores else 100
 
     def _calculate_room_sequence(self, solution: List[dict], problem) -> float:
         """Calculate how well room assignments follow capacity-based sequence."""
         # Sort rooms by capacity
-        sorted_rooms = sorted(range(problem.number_of_rooms),
-                              key=lambda r: problem.rooms[r].capacity)
+        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
         room_indices = {r: i for i, r in enumerate(sorted_rooms)}
 
         sequence_scores = []
@@ -1107,23 +1011,19 @@ class ComparisonController:
             next_slot_exams = [e for e in solution if e['timeSlot'] == t + 1]
 
             if current_slot_exams and next_slot_exams:
-                current_indices = [room_indices[e['room']]
-                                   for e in current_slot_exams]
-                next_indices = [room_indices[e['room']]
-                                for e in next_slot_exams]
+                current_indices = [room_indices[e['room']] for e in current_slot_exams]
+                next_indices = [room_indices[e['room']] for e in next_slot_exams]
 
                 # Perfect score if current max index <= next min index
                 if max(current_indices) <= min(next_indices):
                     sequence_scores.append(100)
                 else:
                     # Count sequence violations
-                    violations = sum(1 for c in current_indices
-                                     for n in next_indices if c > n)
+                    violations = sum(1 for c in current_indices for n in next_indices if c > n)
                     max_violations = len(current_indices) * len(next_indices)
                     sequence_scores.append(100 * (1 - violations / max_violations))
 
-        return (sum(sequence_scores) / len(sequence_scores)
-                if sequence_scores else 100)
+        return sum(sequence_scores) / len(sequence_scores) if sequence_scores else 100
 
     def _get_default_metrics(self):
         """Return default metrics for invalid solutions."""
@@ -1149,13 +1049,7 @@ class ComparisonController:
             return max(0, 80 - (time_gap - 2) * 15)  # Longer gap penalty
 
     def _determine_overall_winner(self, metrics1, metrics2, time1, time2):
-        weights = {
-            'time': 0.3,
-            'room_usage': 0.2,
-            'time_spread': 0.15,
-            'student_gaps': 0.2,
-            'room_balance': 0.15
-        }
+        weights = {'time': 0.3, 'room_usage': 0.2, 'time_spread': 0.15, 'student_gaps': 0.2, 'room_balance': 0.15}
 
         max_time = max(time1, time2)
         time_score1 = 100 * (1 - time1 / max_time) if max_time > 0 else 100
@@ -1177,9 +1071,7 @@ class ComparisonController:
             weights['room_balance'] * metrics2['room_balance']
         )
 
-        if abs(score1 - score2) < 1.0:
-            return f"Equal ({score1:.1f})"
-        return f"{'S1' if score1 > score2 else 'S2'} ({max(score1, score2):.1f})"
+        return f"Equal ({score1:.1f})" if abs(score1 - score2) < 1.0 else f"{'S1' if score1 > score2 else 'S2'} ({max(score1, score2):.1f})"
 
     def _update_room_statistics(self, comparison, statistics):
         if "S1" in comparison:
@@ -1204,3 +1096,117 @@ class ComparisonController:
             statistics['solver2_wins'] += 1
         else:
             statistics['ties'] += 1
+
+    def _create_performance_frame(self, parent, solver1_name, solver2_name, statistics):
+        frame = timetablinggui.GUIFrame(
+            parent,
+            corner_radius=10,
+            fg_color="gray20"
+        )
+
+        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics['solver1_times'] else 0
+        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics['solver2_times'] else 0
+
+        label = timetablinggui.GUILabel(
+            frame,
+            text=self._format_performance_text(
+                solver1_name, solver2_name,
+                solver1_avg_time, solver2_avg_time,
+                statistics
+            ),
+            font=timetablinggui.GUIFont(size=12),
+            justify="left"
+        )
+        label.pack(side="left", expand=True, fill="both", padx=15, pady=15)
+
+        return frame
+
+    def _format_performance_text(self, solver1_name, solver2_name, solver1_avg_time, solver2_avg_time, statistics):
+        return f"""Performance Analysis:
+    • {solver1_name} vs {solver2_name}
+    • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
+    • Overall Wins: {statistics['solver1_wins']} vs {statistics['solver2_wins']} ({statistics['ties']} ties)
+
+    Original Constraints:
+    • Room Usage: {statistics['solver1_better_room']} vs {statistics['solver2_better_room']} ({statistics['equal_room']} equal)
+      (How efficiently room capacity is utilized)
+
+    • Time Spread: {statistics['solver1_better_time_spread']} vs {statistics['solver2_better_time_spread']} ({statistics['equal_time_spread']} equal)
+      (How evenly exams are distributed across time slots)
+
+    • Student Gaps: {statistics['solver1_better_student']} vs {statistics['solver2_better_student']} ({statistics['equal_student']} equal)
+      (How well student exam times are spaced)
+
+    • Room Balance: {statistics['solver1_better_balance']} vs {statistics['solver2_better_balance']} ({statistics['equal_balance']} equal)
+      (How evenly rooms are used across time slots)
+
+    Additional Constraints:
+    • Time Distribution: {statistics['solver1_better_distribution']} vs {statistics['solver2_better_distribution']} ({statistics['equal_distribution']} equal)
+      (Exam spread across available time slots)
+
+    • Transition Time: {statistics['solver1_better_transition']} vs {statistics['solver2_better_transition']} ({statistics['equal_transition']} equal)
+      (Room changeover time between exams)
+
+    • Department Grouping: {statistics['solver1_better_department']} vs {statistics['solver2_better_department']} ({statistics['equal_department']} equal)
+      (Similar exams scheduled together)
+
+    • Room Sequence: {statistics['solver1_better_sequence']} vs {statistics['solver2_better_sequence']} ({statistics['equal_sequence']} equal)
+      (Efficient room allocation ordering)
+
+    • Duration Balance: {statistics['solver1_better_duration']} vs {statistics['solver2_better_duration']} ({statistics['equal_duration']} equal)
+      (Exam duration distribution)
+
+    • Invigilator Load: {statistics['solver1_better_invigilator']} vs {statistics['solver2_better_invigilator']} ({statistics['equal_invigilator']} equal)
+      (Staff workload distribution)"""
+
+    def _create_metrics_frame(self, parent):
+        frame = timetablinggui.GUIFrame(
+            parent,
+            corner_radius=10,
+            fg_color="gray20"
+        )
+
+        label = timetablinggui.GUILabel(
+            frame,
+            text=self._create_metrics_text(),
+            font=timetablinggui.GUIFont(size=12),
+            justify="left"
+        )
+        label.pack(side="left", expand=True, fill="both", padx=15, pady=15)
+
+        return frame
+
+    def _create_metrics_text(self):
+        return """Metrics Guide:
+    • Room Usage: Higher % = better room capacity utilization
+      (e.g., filling 80 seats in a 100-seat room)
+
+    • Time Spread: Higher = more even exam distribution
+      (avoiding too many exams in same time slot)
+
+    • Student Gaps: Higher = better spacing between exams
+      (avoiding back-to-back exams for students)
+
+    • Room Balance: Higher = more consistent room usage
+      (using all rooms evenly rather than overusing some)
+
+    • Time Distribution: Higher = better spread of exams
+      (maximizing use of available time slots)
+
+    • Transition Time: Higher = better room changeover times
+      (adequate gaps between exams in same room)
+
+    • Department Grouping: Higher = better exam grouping
+      (related exams scheduled close together)
+
+    • Room Sequence: Higher = more efficient room allocation
+      (optimal ordering of room assignments)
+
+    • Duration Balance: Higher = better exam time distribution
+      (balanced duration of exams across slots)
+
+    • Invigilator Load: Higher = better staff workload balance
+      (even distribution of supervision duties)
+
+    • Quality: Combined score of all metrics above
+      (weighted average of key performance indicators)"""
