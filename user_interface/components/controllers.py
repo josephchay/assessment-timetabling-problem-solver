@@ -682,20 +682,15 @@ class ComparisonController:
     def _update_statistics(self, metrics1, metrics2, statistics):
         """Update all statistics for both original and additional constraints"""
         # Original constraints
-        self._update_room_statistics(self._format_comparison(metrics1['room_usage'], metrics2['room_usage']),
-                                     statistics)
-        self._update_time_spread_statistics(self._format_comparison(metrics1['time_spread'], metrics2['time_spread']),
-                                            statistics)
-        self._update_student_statistics(self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps']),
-                                        statistics)
+        self._update_room_statistics(self._format_comparison(metrics1['room_usage'], metrics2['room_usage']), statistics)
+        self._update_time_spread_statistics(self._format_comparison(metrics1['time_spread'], metrics2['time_spread']), statistics)
+        self._update_student_statistics(self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps']), statistics)
         self._update_room_balance_statistics(
             self._format_comparison(metrics1['room_balance'], metrics2['room_balance']), statistics)
 
         # Additional constraints
-        self._update_time_distribution_statistics(
-            self._format_comparison(metrics1['time_distribution'], metrics2['time_distribution']), statistics)
-        self._update_transition_time_statistics(
-            self._format_comparison(metrics1['transition_time'], metrics2['transition_time']), statistics)
+        self._update_time_distribution_statistics(self._format_comparison(metrics1['time_distribution'], metrics2['time_distribution']), statistics)
+        self._update_transition_time_statistics(self._format_comparison(metrics1['transition_time'], metrics2['transition_time']), statistics)
         self._update_department_statistics(
             self._format_comparison(metrics1['department_grouping'], metrics2['department_grouping']), statistics)
         self._update_sequence_statistics(
@@ -798,7 +793,7 @@ class ComparisonController:
         return row_data
 
     def _create_table_widget(self, comparison_data, solver1_name, solver2_name, statistics, headers):
-        """Create the table widget with headers and data with proper scrolling."""
+        """Create the table widget with horizontal scrolling below the table."""
         print(f"Creating table with {len(comparison_data)} rows and {len(headers)} columns")
         print(f"Headers: {headers}")
         print(f"First row sample: {comparison_data[0] if comparison_data else 'No data'}")
@@ -807,18 +802,32 @@ class ComparisonController:
         for widget in self.view.all_scroll.winfo_children():
             widget.destroy()
 
-        # Create outer frame with specific dimensions
-        outer_frame = timetablinggui.GUIFrame(
-            self.view.all_scroll,
-            width=1200,
-            height=600
-        )
-        outer_frame.pack(fill="both", expand=True, padx=10, pady=10)
-        outer_frame.pack_propagate(False)
+        # Create main container frame
+        main_container = timetablinggui.GUIFrame(self.view.all_scroll)
+        main_container.pack(fill="both", expand=True)
 
-        # Create main display frame
-        table_frame = timetablinggui.GUIFrame(outer_frame)
-        table_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Create scrollable container
+        scroll_container = timetablinggui.GUIFrame(main_container)
+        scroll_container.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Create canvas for horizontal scrolling
+        canvas = timetablinggui.GUICanvas(scroll_container)
+        canvas.pack(fill="both", expand=True)  # Fill the entire container first
+
+        # Create horizontal scrollbar BELOW the canvas
+        scrollbar = timetablinggui.GUIScrollbar(
+            scroll_container,
+            orientation="horizontal",
+            command=canvas.xview
+        )
+        scrollbar.pack(fill="x")  # Pack at bottom, fill horizontally
+
+        # Configure canvas
+        canvas.configure(xscrollcommand=scrollbar.set)
+
+        # Create frame inside canvas
+        table_frame = timetablinggui.GUIFrame(canvas)
+        canvas_window = canvas.create_window((0, 0), window=table_frame, anchor="nw", width=canvas.winfo_width())
 
         # Create the table
         table = timetablinggui.TableManager(
@@ -831,13 +840,19 @@ class ComparisonController:
         )
         table.pack(fill="both", expand=True)
 
-        # Configure minimum column widths
-        # min_width = 100
-        # for i in range(len(headers)):
-        #     table.column(i, minwidth=min_width, width=min_width)
+        # Update scroll region after table is created
+        table_frame.update_idletasks()
+        table_width = table_frame.winfo_reqwidth()
+        table_height = table_frame.winfo_reqheight()
+
+        # Configure canvas scrolling
+        canvas.configure(
+            scrollregion=(0, 0, table_width, table_height),
+            height=table_height  # Set fixed height to match table
+        )
 
         # Create analysis section below table
-        analysis_frame = timetablinggui.GUIFrame(outer_frame)
+        analysis_frame = timetablinggui.GUIFrame(main_container)
         analysis_frame.pack(fill="x", padx=10, pady=10)
 
         # Add performance analysis
@@ -849,31 +864,19 @@ class ComparisonController:
         performance_frame.pack(side="left", expand=True, fill="both", padx=(0, 5))
         metrics_frame.pack(side="left", expand=True, fill="both", padx=(5, 0))
 
-        return outer_frame
+        # Bind mouse wheel for horizontal scrolling
+        def _on_mousewheel(event):
+            canvas.xview_scroll(-int(event.delta / 120), "units")
 
-    def _format_column_widths(self, table):
-        """Set appropriate column widths based on content."""
-        column_widths = {
-            0: 80,  # Inst.
-            1: 100,  # Solver1
-            2: 100,  # Solver2
-            # Original Constraints
-            3: 120,  # Room Usage
-            4: 120,  # Time Spread
-            5: 120,  # Stu. Gaps
-            6: 120,  # Room Bal.
-            # Additional Constraints
-            7: 120,  # Time Dist.
-            8: 120,  # Trans. Time
-            9: 120,  # Dept. Group
-            10: 120,  # Room Seq.
-            11: 120,  # Dur. Bal.
-            12: 120,  # Invig. Load
-            13: 150  # Ovl. Quality
-        }
+        canvas.bind_all("<Shift-MouseWheel>", _on_mousewheel)
 
-        for col, width in column_widths.items():
-            table.column(col, minwidth=width, width=width, stretch=True)
+        # Function to handle canvas/table resize
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        canvas.bind('<Configure>', _on_canvas_configure)
+
+        return main_container
 
     def _create_analysis_section(self, container_frame, solver1_name, solver2_name, statistics):
         analysis_section = timetablinggui.GUIFrame(container_frame)
