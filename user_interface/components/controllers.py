@@ -51,9 +51,7 @@ class SchedulerController:
                 self.view.status_label.configure(text="Please select a second solver for comparison.")
                 return False
             if solver1 == solver2:
-                self.view.status_label.configure(
-                    text="Please select two different solvers to compare."
-                )
+                self.view.status_label.configure(text="Please select two different solvers to compare.")
                 return False
 
         return True
@@ -81,8 +79,7 @@ class SchedulerController:
                 print(f"Error processing {test_file.name}: {str(e)}")
                 continue
 
-        self._display_results(solver1, solver2, comparison_results,
-                              unsat_results, total_solution_time)
+        self._display_results(solver1, solver2, comparison_results, unsat_results, total_solution_time)
 
     def _process_single_file(self, test_file, solver1, solver2, comparison_results, unsat_results, total_solution_time, current_index, total_files):
         """Process a single test file and update the results."""
@@ -617,20 +614,8 @@ class ComparisonController:
         self._update_statistics(metrics1, metrics2, statistics)
 
         return [
-            instance_name,
-            f"{time1}ms",
-            f"{time2}ms",
-            room_usage_comp,
-            time_spread_comp,
-            student_gaps_comp,
-            room_balance_comp,
-            time_dist_comp,
-            trans_time_comp,
-            dept_group_comp,
-            room_seq_comp,
-            dur_bal_comp,
-            invig_load_comp,
-            overall_comp
+            instance_name, f"{time1}ms", f"{time2}ms", room_usage_comp, time_spread_comp, student_gaps_comp, room_balance_comp,
+            time_dist_comp, trans_time_comp, dept_group_comp, room_seq_comp, dur_bal_comp, invig_load_comp, overall_comp
         ]
 
     def _create_unsat_row(self, instance_name):
@@ -655,8 +640,7 @@ class ComparisonController:
         self._update_room_statistics(self._format_comparison(metrics1['room_usage'], metrics2['room_usage']), statistics)
         self._update_time_spread_statistics(self._format_comparison(metrics1['time_spread'], metrics2['time_spread']), statistics)
         self._update_student_statistics(self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps']), statistics)
-        self._update_room_balance_statistics(
-            self._format_comparison(metrics1['room_balance'], metrics2['room_balance']), statistics)
+        self._update_room_balance_statistics(self._format_comparison(metrics1['room_balance'], metrics2['room_balance']), statistics)
 
         # Additional constraints
         self._update_time_distribution_statistics(self._format_comparison(metrics1['time_distribution'], metrics2['time_distribution']), statistics)
@@ -1178,20 +1162,7 @@ class ComparisonController:
 
     def _create_metrics_text(self):
         return """Metrics Guide:
-    • Room Usage: Higher % = better room capacity utilization
-      (Ideal: e.g., filling 80 seats in a 100-seat room)
-
-    • Time Spread: Higher = more even exam distribution
-      (Ideal: Avoiding too many exams in same time slot)
-
-    • Student Gaps: Higher = better spacing between exams
-      (Ideal: Avoiding back-to-back exams for students)
-
-    • Room Balance: Higher = more consistent room usage
-      (Ideal: Using all rooms evenly rather than overusing some)
-
-    • Time Distribution: Higher = better spread of exams
-      (Ideal: Maximizing use of available time slots)
+    • Room Usage: Higher % = better room capacity utilization\n  (Ideal: e.g., filling 80 seats in a 100-seat room)\n\n• Time Spread: Higher = more even exam distribution\n  (Ideal: Avoiding too many exams in same time slot)\n• Student Gaps: Higher = better spacing between exams\n  (Ideal: Avoiding back-to-back exams for students)\n\n• Room Balance: Higher = more consistent room usage\n  (Ideal: Using all rooms evenly rather than overusing some)\n\n• Time Distribution: Higher = better spread of exams\n  (Ideal: Maximizing use of available time slots)
 
     • Transition Time: Higher = better room changeover times
       (Ideal: Adequate gaps between exams in same room)

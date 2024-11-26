@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added foundation functionality for results comparison between multiple solvers.
 - Feature - Added 8 more unique extraordinary constraints for the system.
 - Feature - Added evaluation metrics for all the original and additional constraints.
+- Feature - Added login and registration methods for user and invigilator with privilege management.
 
 ### Changed
 - Updated statistics visualization buttons and their information display options.
