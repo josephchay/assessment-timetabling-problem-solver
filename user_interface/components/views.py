@@ -161,52 +161,54 @@ class SchedulerView(timetablinggui.TimetablingGUI):
         instance_frame = timetablinggui.GUIFrame(parent)
         instance_frame.pack(fill="x", padx=10, pady=5)
 
-        # Header section with instance name and execution time
+        # Header frame
         header_frame = timetablinggui.GUIFrame(instance_frame)
         header_frame.pack(fill="x", padx=5, pady=5)
 
-        info_frame = timetablinggui.GUIFrame(header_frame)
-        info_frame.pack(side="left", fill="x", expand=True)
+        # Left side: Instance name
+        left_frame = timetablinggui.GUIFrame(header_frame)
+        left_frame.pack(side="left", fill="x", expand=True)
 
         instance_label = timetablinggui.GUILabel(
-            info_frame,
+            left_frame,
             text=f"Instance: {instance_name}",
             font=timetablinggui.GUIFont(size=12, weight="bold")
         )
         instance_label.pack(side="left", pady=5)
 
-        # Add execution time if available
-        if solution_time is not None:
-            time_label = timetablinggui.GUILabel(
-                info_frame,
-                text=f"Execution Time: {solution_time}ms",
-                font=timetablinggui.GUIFont(size=12)
-            )
-            time_label.pack(side="left", padx=(10, 0), pady=5)
-
-        # Right side: Visualization dropdown (only for SAT instances in SAT tab)
+        # Right side: Execution time and visualization dropdown
         if is_sat_tab and solution is not None and problem is not None:
             control_frame = timetablinggui.GUIFrame(header_frame)
             control_frame.pack(side="right", padx=5)
 
+            # Add execution time if available
+            if solution_time is not None:
+                time_label = timetablinggui.GUILabel(
+                    control_frame,
+                    text=f"Execution Time: {solution_time}ms",
+                    font=timetablinggui.GUIFont(size=12)
+                )
+                time_label.pack(side="left", padx=(0, 10), pady=5)
+
+            # Visualization dropdown
             def on_visualization_select(choice):
-                if choice == "View Room Utilization":
+                if choice == "Visualize Room Utilization":
                     self.visualization_manager._show_graph(solution, problem, instance_name, "Room Utilization")
-                elif choice == "View Time Distribution":
+                elif choice == "Visualize Time Distribution":
                     self.visualization_manager._show_graph(solution, problem, instance_name, "Time Distribution")
-                elif choice == "View Student Spread":
+                elif choice == "Visualize Student Spread":
                     self.visualization_manager._show_graph(solution, problem, instance_name, "Student Spread")
-                elif choice == "View Timetable Heatmap":
+                elif choice == "Visualize Timetable Heatmap":
                     self.visualization_manager._show_graph(solution, problem, instance_name, "Timetable Heatmap")
 
             visualization_menu = timetablinggui.GUIOptionMenu(
                 control_frame,
                 values=[
                     "Select Visualization",
-                    "View Room Utilization",
-                    "View Time Distribution",
-                    "View Student Spread",
-                    "View Timetable Heatmap"
+                    "Visualize Room Utilization",
+                    "Visualize Time Distribution",
+                    "Visualize Student Spread",
+                    "Visualize Timetable Heatmap"
                 ],
                 variable=timetablinggui.StringVar(value="Select Visualization"),
                 command=on_visualization_select,
@@ -214,20 +216,58 @@ class SchedulerView(timetablinggui.TimetablingGUI):
             )
             visualization_menu.pack(side="right")
 
-        # Create table
+        # Create scrollable table container
+        table_container = timetablinggui.GUIFrame(instance_frame)
+        table_container.pack(fill="both", expand=True)
+
+        # Create canvas for horizontal scrolling
+        canvas = timetablinggui.GUICanvas(table_container)
+        scrollbar = timetablinggui.GUIScrollbar(table_container, orientation="horizontal", command=canvas.xview)
+
+        # Create frame inside canvas
+        inner_frame = timetablinggui.GUIFrame(canvas)
+
+        # Configure scrolling
+        canvas.configure(xscrollcommand=scrollbar.set)
+        canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+
+        # Pack canvas and scrollbar
+        canvas.pack(side="top", fill="both", expand=True)
+        scrollbar.pack(side="bottom", fill="x")
+
+        # Create table inside inner_frame
         if data:
             table_headers = headers if headers is not None else self.sat_headers
             values = [table_headers] + data
 
             table = timetablinggui.TableManager(
-                master=instance_frame,
+                master=inner_frame,
                 row=len(values),
                 column=len(table_headers),
                 values=values,
                 header_color=("gray70", "gray30"),
                 hover=False
             )
-            table.pack(fill="both", expand=True, padx=10, pady=5)
+            table.pack(fill="both", expand=True)
+
+            # Configure the canvas scroll region after the table is created
+            inner_frame.update_idletasks()
+            table_width = inner_frame.winfo_reqwidth()
+            table_height = inner_frame.winfo_reqheight()
+
+            # Set up scroll region and canvas size
+            canvas.configure(
+                scrollregion=(0, 0, table_width, table_height),
+                width=min(table_width, 1100),  # Limit initial view width
+                height=table_height
+            )
+
+            # Bind mousewheel for horizontal scrolling with shift
+            def _on_mousewheel(event):
+                if event.state & 4:  # Check if shift is held down
+                    canvas.xview_scroll(-int(event.delta / 120), "units")
+
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
         return instance_frame
 
@@ -312,11 +352,14 @@ class SchedulerView(timetablinggui.TimetablingGUI):
 
         # Set default values and pack switches
         for name, switch in self.constraint_vars.items():
-            # Set core constraints on by default
+            # Set core and additional constraints all on by default
             switch.select() if name in [
                 'single_assignment', 'room_conflicts',
                 'room_capacity', 'student_spacing',
-                'max_exams_per_slot'
+                'max_exams_per_slot', 'morning_sessions',
+                'exam_group_size', 'department_grouping',
+                'room_balancing', 'invigilator_assignment',
+                'break_period', 'invigilator_break',
             ] else switch.deselect()
             switch.pack(pady=2)
 
