@@ -2,11 +2,10 @@ from z3 import Solver, Int, unsat
 from typing import Any, List
 
 from utilities import SchedulingProblem
-from conditioning import IConstraint, SingleAssignmentConstraint, RoomConflictConstraint, \
-    RoomCapacityConstraint, \
-    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, TimeSlotDistributionConstraint, \
-    RoomTransitionTimeConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
-    InvigilatorAssignmentConstraint, PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint
+from conditioning import IConstraint, SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, MorningSessionPreferenceConstraint, ExamGroupSizeOptimizationConstraint, \
+    BreakPeriodConstraint, InvigilatorBreakConstraint
 
 
 class ZThreeSolver:
@@ -24,14 +23,13 @@ class ZThreeSolver:
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
             MaxExamsPerSlotConstraint(),
-            TimeSlotDistributionConstraint(),
-            # RoomTransitionTimeConstraint(),
-            # DepartmentGroupingConstraint(),
-            # RoomBalancingConstraint(),
-            # InvigilatorAssignmentConstraint(),
-            # PreferredRoomSequenceConstraint(),
-            # ExamDurationBalancingConstraint(),
-            # ExamDurationBalancingConstraint(),
+            MorningSessionPreferenceConstraint(),
+            ExamGroupSizeOptimizationConstraint(),
+            DepartmentGroupingConstraint(),
+            RoomBalancingConstraint(),
+            InvigilatorAssignmentConstraint(),
+            BreakPeriodConstraint(),
+            InvigilatorBreakConstraint(),
         ]
 
     @staticmethod
@@ -41,6 +39,7 @@ class ZThreeSolver:
 
     def solve(self) -> list[dict[str, int | Any]] | None:
         """Apply constraints and solve the scheduling problem"""
+
         # Apply all constraints
         for constraint in self.constraints:
             constraint.apply_z3(self.solver, self.problem, self.exam_time, self.exam_room)

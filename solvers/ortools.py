@@ -2,10 +2,10 @@ from ortools.sat.python import cp_model
 from typing import Any
 
 from utilities import BaseSolver, SchedulingProblem
-from conditioning import SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
-    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, TimeSlotDistributionConstraint, \
-    RoomTransitionTimeConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
-    InvigilatorAssignmentConstraint, PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint
+from conditioning import IConstraint, SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, MorningSessionPreferenceConstraint, ExamGroupSizeOptimizationConstraint, \
+    BreakPeriodConstraint, InvigilatorBreakConstraint
 
 
 class ORToolsSolver(BaseSolver):
@@ -27,14 +27,13 @@ class ORToolsSolver(BaseSolver):
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
             MaxExamsPerSlotConstraint(),
-            TimeSlotDistributionConstraint(),
-            RoomTransitionTimeConstraint(),
+            MorningSessionPreferenceConstraint(),
+            ExamGroupSizeOptimizationConstraint(),
             DepartmentGroupingConstraint(),
             RoomBalancingConstraint(),
             InvigilatorAssignmentConstraint(),
-            PreferredRoomSequenceConstraint(),
-            ExamDurationBalancingConstraint(),
-            ExamDurationBalancingConstraint(),
+            BreakPeriodConstraint(),
+            InvigilatorBreakConstraint(),
         ]
 
     @staticmethod

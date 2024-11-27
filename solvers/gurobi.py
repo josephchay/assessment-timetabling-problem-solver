@@ -1,11 +1,11 @@
 import gurobipy as gp
-from typing import Any
+from typing import Any, List
 
 from utilities import BaseSolver, SchedulingProblem
-from conditioning import SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
-    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, RoomTransitionTimeConstraint, \
-    TimeSlotDistributionConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
-    InvigilatorAssignmentConstraint, PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint
+from conditioning import IConstraint, SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, MorningSessionPreferenceConstraint, ExamGroupSizeOptimizationConstraint, \
+    BreakPeriodConstraint, InvigilatorBreakConstraint
 
 
 class GurobiSolver(BaseSolver):
@@ -32,20 +32,19 @@ class GurobiSolver(BaseSolver):
             )
 
         # Register constraints
-        self.constraints = [
+        self.constraints: List[IConstraint] = [
             SingleAssignmentConstraint(),
             RoomConflictConstraint(),
             RoomCapacityConstraint(),
             NoConsecutiveSlotsConstraint(),
             MaxExamsPerSlotConstraint(),
-            # TimeSlotDistributionConstraint(),
-            # RoomTransitionTimeConstraint(),
-            # DepartmentGroupingConstraint(),
-            # RoomBalancingConstraint(),
-            # InvigilatorAssignmentConstraint(),
-            # PreferredRoomSequenceConstraint(),
-            # ExamDurationBalancingConstraint(),
-            # ExamDurationBalancingConstraint(),
+            MorningSessionPreferenceConstraint(),
+            ExamGroupSizeOptimizationConstraint(),
+            DepartmentGroupingConstraint(),
+            RoomBalancingConstraint(),
+            InvigilatorAssignmentConstraint(),
+            BreakPeriodConstraint(),
+            InvigilatorBreakConstraint(),
         ]
 
         self.model.update()

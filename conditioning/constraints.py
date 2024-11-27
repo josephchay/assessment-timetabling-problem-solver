@@ -350,146 +350,193 @@ New Additional Constraints
 """
 
 
-class TimeSlotDistributionConstraint(IConstraint):
+class MorningSessionPreferenceConstraint(IConstraint):
     """
-    Additional Constraint 2:
-    Try to distribute exams evenly across available time slots.
-    """
-
-    def apply_z3(self, solver, problem, exam_time, exam_room):
-        avg_exams_per_slot = problem.number_of_exams / problem.number_of_slots
-        for t in range(problem.number_of_slots):
-            exams_in_slot = Sum([If(exam_time[e] == t, 1, 0) for e in range(problem.number_of_exams)])
-            solver.add(exams_in_slot <= avg_exams_per_slot + 1)
-
-    def apply_ortools(self, model, problem, exam_time, exam_room):
-        avg_exams_per_slot = problem.number_of_exams / problem.number_of_slots
-        for t in range(problem.number_of_slots):
-            exam_in_slot = []
-            for e in range(problem.number_of_exams):
-                is_in_slot = model.NewBoolVar(f'dist_exam_{e}_slot_{t}')
-                model.Add(exam_time[e] == t).OnlyEnforceIf(is_in_slot)
-                exam_in_slot.append(is_in_slot)
-            model.Add(sum(exam_in_slot) <= avg_exams_per_slot + 1)
-
-    def apply_gurobi(self, model, problem, exam_time, exam_room):
-        avg_exams_per_slot = problem.number_of_exams / problem.number_of_slots
-        for t in range(problem.number_of_slots):
-            exam_in_slot = []
-            for e in range(problem.number_of_exams):
-                is_in_slot = model.addVar(vtype=gp.GRB.BINARY, name=f'dist_exam_{e}_slot_{t}')
-                M = problem.number_of_slots + 1
-                model.addConstr(exam_time[e] - t <= M * (1 - is_in_slot))
-                exam_in_slot.append(is_in_slot)
-            model.addConstr(gp.quicksum(exam_in_slot) <= avg_exams_per_slot + 1)
-
-    def apply_cbc(self, model, problem, exam_time, exam_room):
-        avg_exams_per_slot = problem.number_of_exams / problem.number_of_slots
-        for t in range(problem.number_of_slots):
-            exam_in_slot = []
-            for e in range(problem.number_of_exams):
-                is_in_slot = LpVariable(f'dist_exam_{e}_slot_{t}', cat=LpBinary)
-                M = problem.number_of_slots + 1
-                model += exam_time[e] - t <= M * (1 - is_in_slot)
-                exam_in_slot.append(is_in_slot)
-            model += lpSum(exam_in_slot) <= avg_exams_per_slot + 1
-
-    def evaluate_metric(self, problem, exam_time, exam_room):
-        # Count exams per slot
-        slot_counts = defaultdict(int)
-        for slot in exam_time.values():
-            slot_counts[slot] += 1
-
-        # Calculate distribution score
-        avg_exams = len(exam_time) / problem.number_of_slots
-        variations = [abs(count - avg_exams) for count in slot_counts.values()]
-        max_variation = max(variations) if variations else 0
-
-        # Score based on how evenly distributed the exams are
-        return max(0, 100 - (max_variation * 20))
-
-
-class RoomTransitionTimeConstraint(IConstraint):
-    """
-    Additional Constraint 3:
-    Allow minimum transition time between exams in the same room.
+    Additional Constraint (Morning Session):
+    Specific courses (tagged as 'morning') must be scheduled before 1pm.
+    Logic: For any exam e, if it is marked as a morning exam, and it is
+    assigned to time slot t, then t must be a morning time slot.
     """
 
     def apply_z3(self, solver, problem, exam_time, exam_room):
-        min_transition_time = 1
-        for e1 in range(problem.number_of_exams):
-            for e2 in range(e1 + 1, problem.number_of_exams):
+        for e in range(problem.number_of_exams):
+            if hasattr(problem.exams[e], 'morning_required') and problem.exams[e].morning_required:
+                # Assume first half of slots are morning slots
+                morning_slots = range(problem.number_of_slots // 2)
                 solver.add(
-                    Implies(
-                        exam_room[e1] == exam_room[e2],
-                        Or(exam_time[e2] >= exam_time[e1] + min_transition_time,
-                           exam_time[e1] >= exam_time[e2] + min_transition_time)
-                    )
+                    Or([exam_time[e] == t for t in morning_slots])
                 )
 
     def apply_ortools(self, model, problem, exam_time, exam_room):
-        min_transition_time = 1
-        for e1 in range(problem.number_of_exams):
-            for e2 in range(e1 + 1, problem.number_of_exams):
-                same_room = model.NewBoolVar(f'transition_same_room_{e1}_{e2}')
-                time_order = model.NewBoolVar(f'transition_time_order_{e1}_{e2}')
-
-                model.Add(exam_room[e1] == exam_room[e2]).OnlyEnforceIf(same_room)
-                model.Add(exam_time[e2] >= exam_time[e1] + min_transition_time).OnlyEnforceIf(time_order)
-                model.Add(exam_time[e1] >= exam_time[e2] + min_transition_time).OnlyEnforceIf(time_order.Not())
-
-                model.AddImplication(same_room, time_order)
+        # For each morning exam
+        for e in range(problem.number_of_exams):
+            if hasattr(problem.exams[e], 'morning_required') and problem.exams[e].morning_required:
+                morning_slots = range(problem.number_of_slots // 2)
+                # Must be in one of the morning slots
+                in_morning = []
+                for t in morning_slots:
+                    is_this_slot = model.NewBoolVar(f'morning_exam_{e}_slot_{t}')
+                    model.Add(exam_time[e] == t).OnlyEnforceIf(is_this_slot)
+                    in_morning.append(is_this_slot)
+                model.Add(sum(in_morning) == 1)
 
     def apply_gurobi(self, model, problem, exam_time, exam_room):
-        min_transition_time = 1
-        for e1 in range(problem.number_of_exams):
-            for e2 in range(e1 + 1, problem.number_of_exams):
-                same_room = model.addVar(vtype=gp.GRB.BINARY, name=f'transition_same_room_{e1}_{e2}')
-                time_order = model.addVar(vtype=gp.GRB.BINARY, name=f'transition_time_order_{e1}_{e2}')
-                M = problem.number_of_slots + 1
-
-                model.addConstr(exam_room[e1] - exam_room[e2] <= M * (1 - same_room))
-                model.addConstr(exam_room[e2] - exam_room[e1] <= M * (1 - same_room))
-                model.addConstr(exam_time[e2] - exam_time[e1] >= min_transition_time - M * (1 - time_order))
-                model.addConstr(exam_time[e1] - exam_time[e2] >= min_transition_time - M * time_order)
-
-    def apply_cbc(self, model, problem, exam_time, exam_room):
-        min_transition_time = 1
-        for e1 in range(problem.number_of_exams):
-            for e2 in range(e1 + 1, problem.number_of_exams):
-                same_room = LpVariable(f'transition_same_room_{e1}_{e2}', cat=LpBinary)
-                time_order = LpVariable(f'transition_time_order_{e1}_{e2}', cat=LpBinary)
-                M = problem.number_of_slots + 1
-
-                model += exam_room[e1] - exam_room[e2] <= M * (1 - same_room)
-                model += exam_room[e2] - exam_room[e1] <= M * (1 - same_room)
-                model += exam_time[e2] - exam_time[e1] >= min_transition_time - M * (1 - time_order)
-                model += exam_time[e1] - exam_time[e2] >= min_transition_time - M * time_order
+        for e in range(problem.number_of_exams):
+            if hasattr(problem.exams[e], 'morning_required') and problem.exams[e].morning_required:
+                morning_slots = range(problem.number_of_slots // 2)
+                model.addConstr(
+                    gp.quicksum(exam_time[e] == t for t in morning_slots) == 1
+                )
 
     def evaluate_metric(self, problem, exam_time, exam_room):
-        # Score based on transition time between exams in same room
-        transition_scores = []
+        scores = []
+        for e in range(problem.number_of_exams):
+            if hasattr(problem.exams[e], 'morning_required') and problem.exams[e].morning_required:
+                time = exam_time[e]
+                # Check if exam is in morning slot (first half of day)
+                if time < problem.number_of_slots // 2:
+                    scores.append(100)  # Perfect score for morning slot
+                else:
+                    scores.append(0)  # Zero score for afternoon slot
+        return sum(scores) / len(scores) if scores else 100
 
-        # Group exams by room
-        room_exams = defaultdict(list)
-        for exam_id, room_id in exam_room.items():
-            room_exams[room_id].append((exam_time[exam_id], exam_id))
 
-        # Check transitions for each room
-        for room_schedule in room_exams.values():
-            room_schedule.sort()  # Sort by time
+class ExamGroupSizeOptimizationConstraint(IConstraint):
+    """
+    Additional Constraint (No. 7):
+    Exams with similar student counts should be scheduled in adjacent time slots.
+    Logic: For any two exams e1 and e2, if their student count difference is below
+    a threshold, they should be scheduled in consecutive time slots to optimize
+    room utilization and monitoring resources.
+    """
 
-            for i in range(len(room_schedule) - 1):
-                time_gap = room_schedule[i + 1][0] - room_schedule[i][0]
+    def __init__(self, threshold_percentage=20):
+        """
+        Initialize with a threshold percentage for considering exams as similar size.
+        Default 20% means exams within 20% student count of each other are considered similar.
+        """
+        self.threshold_percentage = threshold_percentage
 
-                if time_gap == 0:  # No transition time
-                    transition_scores.append(0)
-                elif time_gap == 1:  # Minimum transition time
-                    transition_scores.append(100)
-                else:  # More than needed
-                    transition_scores.append(max(50, 100 - (time_gap - 1) * 10))
+    def _are_similar_size(self, exam1, exam2, problem):
+        """Helper to determine if two exams are similar in size"""
+        count1 = exam1.get_student_count()
+        count2 = exam2.get_student_count()
+        # Use larger count as base for percentage calculation
+        base = max(count1, count2)
+        if base == 0:
+            return True
+        difference_percentage = abs(count1 - count2) / base * 100
+        return difference_percentage <= self.threshold_percentage
 
-        return sum(transition_scores) / len(transition_scores) if transition_scores else 100
+    def apply_z3(self, solver, problem, exam_time, exam_room):
+        # For each pair of similar-sized exams
+        for e1 in range(problem.number_of_exams):
+            for e2 in range(e1 + 1, problem.number_of_exams):
+                if self._are_similar_size(problem.exams[e1], problem.exams[e2], problem):
+                    # They should be in consecutive slots if possible
+                    # Either e2 follows e1 or e1 follows e2
+                    solver.add(
+                        If(exam_time[e1] < problem.number_of_slots - 1,
+                           If(exam_time[e2] == exam_time[e1] + 1, 1, 0) +
+                           If(exam_time[e2] == exam_time[e1] - 1, 1, 0) >= 1,
+                           True)
+                    )
+
+    def apply_ortools(self, model, problem, exam_time, exam_room):
+        for e1 in range(problem.number_of_exams):
+            for e2 in range(e1 + 1, problem.number_of_exams):
+                if self._are_similar_size(problem.exams[e1], problem.exams[e2], problem):
+                    # Create variables for consecutive slot assignments
+                    e1_before_e2 = model.NewBoolVar(f'e{e1}_before_e{e2}')
+                    e2_before_e1 = model.NewBoolVar(f'e{e2}_before_e{e1}')
+
+                    # If e1 is before e2, they should be consecutive
+                    model.Add(exam_time[e2] == exam_time[e1] + 1).OnlyEnforceIf(e1_before_e2)
+                    # If e2 is before e1, they should be consecutive
+                    model.Add(exam_time[e1] == exam_time[e2] + 1).OnlyEnforceIf(e2_before_e1)
+
+                    # At least one should be true if both exams aren't in last slot
+                    last_slot_var = model.NewBoolVar('last_slot')
+                    model.Add(exam_time[e1] == problem.number_of_slots - 1).OnlyEnforceIf(last_slot_var)
+                    model.Add(exam_time[e2] == problem.number_of_slots - 1).OnlyEnforceIf(last_slot_var)
+                    model.Add(e1_before_e2 + e2_before_e1 >= 1).OnlyEnforceIf(last_slot_var.Not())
+
+    def apply_gurobi(self, model, problem, exam_time, exam_room):
+        for e1 in range(problem.number_of_exams):
+            for e2 in range(e1 + 1, problem.number_of_exams):
+                if self._are_similar_size(problem.exams[e1], problem.exams[e2], problem):
+                    # Binary variables for consecutive arrangements
+                    e1_before_e2 = model.addVar(vtype=gp.GRB.BINARY, name=f'e{e1}_before_e{e2}')
+                    e2_before_e1 = model.addVar(vtype=gp.GRB.BINARY, name=f'e{e2}_before_e{e1}')
+
+                    # Big M for constraints
+                    M = problem.number_of_slots
+
+                    # Enforce consecutive slots when binary variables are 1
+                    model.addConstr(exam_time[e2] - exam_time[e1] <= 1 + M * (1 - e1_before_e2))
+                    model.addConstr(exam_time[e2] - exam_time[e1] >= 1 - M * (1 - e1_before_e2))
+
+                    model.addConstr(exam_time[e1] - exam_time[e2] <= 1 + M * (1 - e2_before_e1))
+                    model.addConstr(exam_time[e1] - exam_time[e2] >= 1 - M * (1 - e2_before_e1))
+
+                    # For exams not in last slot, at least one arrangement should be true
+                    not_last_slot = model.addVar(vtype=gp.GRB.BINARY, name=f'not_last_{e1}_{e2}')
+                    model.addConstr(
+                        (exam_time[e1] < problem.number_of_slots - 1) +
+                        (exam_time[e2] < problem.number_of_slots - 1) >= not_last_slot
+                    )
+                    model.addConstr(e1_before_e2 + e2_before_e1 >= not_last_slot)
+
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        scores = []
+
+        # For each pair of similar-sized exams
+        for e1 in range(problem.number_of_exams):
+            for e2 in range(e1 + 1, problem.number_of_exams):
+                if self._are_similar_size(problem.exams[e1], problem.exams[e2], problem):
+                    time1 = exam_time[e1]
+                    time2 = exam_time[e2]
+
+                    # Calculate time difference
+                    time_diff = abs(time1 - time2)
+
+                    if time_diff == 1:
+                        # Perfect score for consecutive slots
+                        scores.append(100)
+                    elif time_diff == 0:
+                        # Penalty for same slot
+                        scores.append(50)
+                    else:
+                        # Decreasing score for larger gaps
+                        scores.append(max(0, 100 - (time_diff - 1) * 20))
+
+        # If no similar-sized exams found, return perfect score
+        return sum(scores) / len(scores) if scores else 100
+
+    def apply_cbc(self, model, problem, exam_time, exam_room):
+        """CBC solver implementation"""
+
+        for e1 in range(problem.number_of_exams):
+            for e2 in range(e1 + 1, problem.number_of_exams):
+                if self._are_similar_size(problem.exams[e1], problem.exams[e2], problem):
+                    # Variables for consecutive arrangements
+                    e1_before_e2 = LpVariable(f'e{e1}_before_e{e2}', cat='Binary')
+                    e2_before_e1 = LpVariable(f'e{e2}_before_e{e1}', cat='Binary')
+
+                    # Big M for constraints
+                    M = problem.number_of_slots
+
+                    # Enforce consecutive slots
+                    model += exam_time[e2] - exam_time[e1] <= 1 + M * (1 - e1_before_e2)
+                    model += exam_time[e2] - exam_time[e1] >= 1 - M * (1 - e1_before_e2)
+
+                    model += exam_time[e1] - exam_time[e2] <= 1 + M * (1 - e2_before_e1)
+                    model += exam_time[e1] - exam_time[e2] >= 1 - M * (1 - e2_before_e1)
+
+                    # For non-last slots, require at least one arrangement
+                    model += exam_time[e1] <= problem.number_of_slots - 2
+                    model += exam_time[e2] <= problem.number_of_slots - 2
+                    model += e1_before_e2 + e2_before_e1 >= 1
 
 
 class DepartmentGroupingConstraint(IConstraint):
@@ -902,428 +949,148 @@ class InvigilatorAssignmentConstraint(IConstraint):
 
         return sum(scores) / len(scores) if scores else 100
 
-class PreferredRoomSequenceConstraint(IConstraint):
+
+class BreakPeriodConstraint(IConstraint):
     """
-    Additional Constraint:
-    Encourages exams to follow preferred room sequences (e.g., moving from smaller to
-    larger rooms throughout the day) to optimize student flow and building usage.
-    """
-
-    def apply_z3(self, solver, problem, exam_time, exam_room):
-        # Get rooms sorted by capacity
-        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
-        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
-
-        for t in range(problem.number_of_slots - 1):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(problem.number_of_exams):
-                    if e1 != e2:
-                        # If e1 is in slot t and e2 in t+1, prefer e2's room to be
-                        # same or larger than e1's
-                        solver.add(
-                            Implies(
-                                And(exam_time[e1] == t, exam_time[e2] == t + 1),
-                                room_indices[exam_room[e1]] <= room_indices[exam_room[e2]]
-                            )
-                        )
-
-    def apply_ortools(self, model, problem, exam_time, exam_room):
-        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
-        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
-
-        for t in range(problem.number_of_slots - 1):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(problem.number_of_exams):
-                    if e1 != e2:
-                        consecutive = model.NewBoolVar(f'consecutive_{e1}_{e2}_slot_{t}')
-                        model.Add(exam_time[e1] == t).OnlyEnforceIf(consecutive)
-                        model.Add(exam_time[e2] == t + 1).OnlyEnforceIf(consecutive)
-                        model.Add(room_indices[exam_room[e1]] <= room_indices[exam_room[e2]]).OnlyEnforceIf(consecutive)
-
-    def apply_gurobi(self, model, problem, exam_time, exam_room):
-        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
-        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
-
-        for t in range(problem.number_of_slots - 1):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(problem.number_of_exams):
-                    if e1 != e2:
-                        consecutive = model.addVar(vtype=gp.GRB.BINARY, name=f'consecutive_{e1}_{e2}_slot_{t}')
-                        M = problem.number_of_slots + 1
-                        model.addConstr(exam_time[e1] - t <= M * (1 - consecutive))
-                        model.addConstr(exam_time[e2] - (t + 1) <= M * (1 - consecutive))
-                        model.addConstr(room_indices[exam_room[e1]] <= room_indices[exam_room[e2]] + M * (1 - consecutive))
-
-    def apply_cbc(self, model, problem, exam_time, exam_room):
-        sorted_rooms = sorted(range(problem.number_of_rooms), key=lambda r: problem.rooms[r].capacity)
-        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
-
-        for t in range(problem.number_of_slots - 1):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(problem.number_of_exams):
-                    if e1 != e2:
-                        consecutive = LpVariable(f'consecutive_{e1}_{e2}_slot_{t}', cat=LpBinary)
-                        M = problem.number_of_slots + 1
-                        model += exam_time[e1] - t <= M * (1 - consecutive)
-                        model += exam_time[e2] - (t + 1) <= M * (1 - consecutive)
-                        model += room_indices[exam_room[e1]] <= room_indices[exam_room[e2]] + M * (1 - consecutive)
-
-    def evaluate_metric(self, problem, exam_time, exam_room):
-        # Sort rooms by capacity
-        sorted_rooms = sorted(range(problem.number_of_rooms),
-                              key=lambda r: problem.rooms[r].capacity)
-        room_indices = {r: i for i, r in enumerate(sorted_rooms)}
-
-        sequence_scores = []
-
-        # Check each pair of consecutive time slots
-        for t in range(problem.number_of_slots - 1):
-            current_slot_exams = [(e_id, exam_room[e_id])
-                                  for e_id, slot in exam_time.items() if slot == t]
-            next_slot_exams = [(e_id, exam_room[e_id])
-                               for e_id, slot in exam_time.items() if slot == t + 1]
-
-            if not current_slot_exams or not next_slot_exams:
-                continue
-
-            # Get room indices for both slots
-            current_indices = [room_indices[r] for _, r in current_slot_exams]
-            next_indices = [room_indices[r] for _, r in next_slot_exams]
-
-            # Perfect score if all current rooms are smaller/equal to next rooms
-            if max(current_indices) <= min(next_indices):
-                sequence_scores.append(100)
-            else:
-                # Count sequence violations
-                violations = sum(1 for c in current_indices
-                                 for n in next_indices if c > n)
-                max_violations = len(current_indices) * len(next_indices)
-                sequence_scores.append(100 * (1 - violations / max_violations))
-
-        return sum(sequence_scores) / len(sequence_scores) if sequence_scores else 100
-
-
-class ExamDurationBalancingConstraint(IConstraint):
-    """
-    Additional Constraint:
-    Attempts to balance the duration of exams across time slots to manage
-    building opening hours and staff workload. Assumes each exam has a duration
-    property (could be added to Exam class).
+    Additional Constraint (Break Period):
+    There must be at least one empty time slot between exams longer than 2 hours.
+    Logic: For any exam e1 that has long duration, if it is assigned to time slot t,
+    then no exam can be scheduled in time slot t+1.
     """
 
     def apply_z3(self, solver, problem, exam_time, exam_room):
-        # Assuming each exam has a duration (could be added to Exam class)
-        default_duration = 120  # 2 hours in minutes
-        max_duration_per_slot = 180  # 3 hours in minutes
-
-        for t in range(problem.number_of_slots):
-            slot_duration = Sum([
-                If(exam_time[e] == t, default_duration, 0)
-                for e in range(problem.number_of_exams)
-            ])
-            solver.add(slot_duration <= max_duration_per_slot)
-
-            # Try to balance durations between consecutive slots
-            if t < problem.number_of_slots - 1:
-                next_slot_duration = Sum([
-                    If(exam_time[e] == t + 1, default_duration, 0)
-                    for e in range(problem.number_of_exams)
-                ])
-                # Limit difference between consecutive slots
-                solver.add(abs(slot_duration - next_slot_duration) <= 60)
-
-    def apply_ortools(self, model, problem, exam_time, exam_room):
-        default_duration = 120
-        max_duration_per_slot = 180
-
-        for t in range(problem.number_of_slots):
-            exams_in_slot = []
-            for e in range(problem.number_of_exams):
-                is_in_slot = model.NewBoolVar(f'duration_exam_{e}_slot_{t}')
-                model.Add(exam_time[e] == t).OnlyEnforceIf(is_in_slot)
-                exams_in_slot.append(is_in_slot)
-
-            # Limit total duration in slot
-            model.Add(sum(is_in_slot * default_duration for is_in_slot in exams_in_slot) <= max_duration_per_slot)
-
-            # Balance consecutive slots
-            if t < problem.number_of_slots - 1:
-                next_slot_exams = []
-                for e in range(problem.number_of_exams):
-                    is_in_next = model.NewBoolVar(f'duration_exam_{e}_slot_{t + 1}')
-                    model.Add(exam_time[e] == t + 1).OnlyEnforceIf(is_in_next)
-                    next_slot_exams.append(is_in_next)
-
-                # Limit difference between slots
-                diff_var = model.NewIntVar(-60, 60, f'duration_diff_{t}')
-                model.Add(sum(is_in_slot * default_duration
-                              for is_in_slot in exams_in_slot) -
-                          sum(is_in_next * default_duration
-                              for is_in_next in next_slot_exams) == diff_var)
-
-    def apply_gurobi(self, model, problem, exam_time, exam_room):
-        default_duration = 120
-        max_duration_per_slot = 180
-
-        for t in range(problem.number_of_slots):
-            slot_exams = []
-            for e in range(problem.number_of_exams):
-                is_in_slot = model.addVar(vtype=gp.GRB.BINARY,
-                                          name=f'duration_exam_{e}_slot_{t}')
-                M = problem.number_of_slots + 1
-                model.addConstr(exam_time[e] - t <= M * (1 - is_in_slot))
-                slot_exams.append(is_in_slot)
-
-            # Limit total duration
-            model.addConstr(gp.quicksum(is_in_slot * default_duration
-                                        for is_in_slot in slot_exams) <= max_duration_per_slot)
-
-            # Balance consecutive slots
-            if t < problem.number_of_slots - 1:
-                next_slot_exams = []
-                for e in range(problem.number_of_exams):
-                    is_in_next = model.addVar(vtype=gp.GRB.BINARY,
-                                              name=f'duration_exam_{e}_slot_{t + 1}')
-                    M = problem.number_of_slots + 1
-                    model.addConstr(exam_time[e] - (t + 1) <= M * (1 - is_in_next))
-                    next_slot_exams.append(is_in_next)
-
-                # Limit difference
-                diff_plus = model.addVar(name=f'duration_diff_plus_{t}')
-                diff_minus = model.addVar(name=f'duration_diff_minus_{t}')
-                model.addConstr(
-                    gp.quicksum(is_in_slot * default_duration for is_in_slot in slot_exams) -
-                    gp.quicksum(is_in_next * default_duration for is_in_next in next_slot_exams) ==
-                    diff_plus - diff_minus
-                )
-                model.addConstr(diff_plus + diff_minus <= 60)
-
-    def apply_cbc(self, model, problem, exam_time, exam_room):
-        default_duration = 120
-        max_duration_per_slot = 180
-
-        for t in range(problem.number_of_slots):
-            slot_exams = []
-            for e in range(problem.number_of_exams):
-                is_in_slot = LpVariable(f'duration_exam_{e}_slot_{t}', cat=LpBinary)
-                M = problem.number_of_slots + 1
-                model += exam_time[e] - t <= M * (1 - is_in_slot)
-                slot_exams.append(is_in_slot)
-
-            # Limit total duration
-            model += lpSum(is_in_slot * default_duration
-                           for is_in_slot in slot_exams) <= max_duration_per_slot
-
-            # Balance consecutive slots
-            if t < problem.number_of_slots - 1:
-                next_slot_exams = []
-                for e in range(problem.number_of_exams):
-                    is_in_next = LpVariable(f'duration_exam_{e}_slot_{t + 1}',
-                                            cat=LpBinary)
-                    M = problem.number_of_slots + 1
-                    model += exam_time[e] - (t + 1) <= M * (1 - is_in_next)
-                    next_slot_exams.append(is_in_next)
-
-                # Limit difference
-                diff_plus = LpVariable(f'duration_diff_plus_{t}')
-                diff_minus = LpVariable(f'duration_diff_minus_{t}')
-                model += (lpSum(is_in_slot * default_duration for is_in_slot in slot_exams) -
-                          lpSum(is_in_next * default_duration for is_in_next in next_slot_exams) ==
-                          diff_plus - diff_minus)
-                model += diff_plus + diff_minus <= 60
-
-    def evaluate_metric(self, problem, exam_time, exam_room):
-            # Simulate exam duration based on student count
-            # Assumption: More students = longer exam
-            def get_exam_duration(exam_id):
-                student_count = problem.exams[exam_id].get_student_count()
-                return min(180, 60 + student_count * 2)  # Base 60 mins + 2 mins per student, max 3 hours
-
-            # Calculate total duration per time slot
-            slot_durations = defaultdict(int)
-            for exam_id, slot in exam_time.items():
-                slot_durations[slot] += get_exam_duration(exam_id)
-
-            if not slot_durations:
-                return 100
-
-            # Calculate balance scores
-            avg_duration = sum(slot_durations.values()) / len(slot_durations)
-            balance_scores = []
-
-            # Score each slot based on deviation from average
-            for duration in slot_durations.values():
-                deviation = abs(duration - avg_duration)
-                # Convert to percentage score (larger deviations = lower scores)
-                balance_scores.append(max(0, 100 - (deviation / 30)))  # 30 mins deviation = 1 point
-
-            return sum(balance_scores) / len(balance_scores)
-
-
-class RoomProximityConstraint(IConstraint):
-    """
-    Additional Constraint:
-    Ensures that when multiple exams run concurrently, they are assigned to rooms
-    that are close to each other (assuming rooms have location coordinates).
-    This helps with exam monitoring and student navigation.
-    """
-
-    def apply_z3(self, solver, problem, exam_time, exam_room):
-        # Assuming rooms have x,y coordinates for location
-        room_locations = {
-            0: (0, 0),  # Example coordinates
-            1: (0, 1),
-            2: (1, 0),
-            3: (1, 1)
-        }
-        max_distance = 2  # Maximum allowed distance between concurrent exams
-
-        def manhattan_distance(r1, r2):
-            x1, y1 = room_locations.get(r1, (0, 0))
-            x2, y2 = room_locations.get(r2, (0, 0))
-            return abs(x1 - x2) + abs(y1 - y2)
-
-        for t in range(problem.number_of_slots):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(e1 + 1, problem.number_of_exams):
-                    # If exams are in the same time slot, ensure rooms are close
+        for e1 in range(problem.number_of_exams):
+            if hasattr(problem.exams[e1], 'duration') and problem.exams[e1].duration > 120:  # > 2 hours
+                for t in range(problem.number_of_slots - 1):  # Exclude last slot
+                    # If e1 is in slot t, no exam can be in t+1
                     solver.add(
                         Implies(
-                            And(exam_time[e1] == t,
-                                exam_time[e2] == t),
-                            manhattan_distance(exam_room[e1], exam_room[e2]) <= max_distance
+                            exam_time[e1] == t,
+                            And([exam_time[e2] != t + 1 for e2 in range(problem.number_of_exams)])
                         )
                     )
 
     def apply_ortools(self, model, problem, exam_time, exam_room):
-        room_locations = {
-            0: (0, 0),
-            1: (0, 1),
-            2: (1, 0),
-            3: (1, 1)
-        }
-        max_distance = 2
+        for e1 in range(problem.number_of_exams):
+            if hasattr(problem.exams[e1], 'duration') and problem.exams[e1].duration > 120:
+                for t in range(problem.number_of_slots - 1):
+                    # If exam is in this slot
+                    is_in_slot = model.NewBoolVar(f'long_exam_{e1}_slot_{t}')
+                    model.Add(exam_time[e1] == t).OnlyEnforceIf(is_in_slot)
 
-        def manhattan_distance(r1, r2):
-            x1, y1 = room_locations.get(r1, (0, 0))
-            x2, y2 = room_locations.get(r2, (0, 0))
-            return abs(x1 - x2) + abs(y1 - y2)
-
-        for t in range(problem.number_of_slots):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(e1 + 1, problem.number_of_exams):
-                    concurrent = model.NewBoolVar(f'proximity_concurrent_{e1}_{e2}_slot_{t}')
-                    room_ok = model.NewBoolVar(f'rooms_close_enough_{e1}_{e2}')
-
-                    # Check if exams are concurrent
-                    model.Add(exam_time[e1] == t).OnlyEnforceIf(concurrent)
-                    model.Add(exam_time[e2] == t).OnlyEnforceIf(concurrent)
-                    model.Add(exam_time[e1] != t).OnlyEnforceIf(concurrent.Not())
-
-                    # For each possible room combination, ensure they're close enough
-                    # if the exams are concurrent
-                    forbidden_combinations = []
-                    for r1 in range(problem.number_of_rooms):
-                        for r2 in range(problem.number_of_rooms):
-                            if manhattan_distance(r1, r2) > max_distance:
-                                room_pair = model.NewBoolVar(f'forbidden_rooms_{e1}_{e2}_{r1}_{r2}')
-                                model.Add(exam_room[e1] == r1).OnlyEnforceIf(room_pair)
-                                model.Add(exam_room[e2] == r2).OnlyEnforceIf(room_pair)
-                                forbidden_combinations.append(room_pair)
-
-                    # If exams are concurrent, no forbidden combinations allowed
-                    if forbidden_combinations:
-                        model.Add(sum(forbidden_combinations) == 0).OnlyEnforceIf(concurrent)
+                    # No exams in next slot
+                    for e2 in range(problem.number_of_exams):
+                        model.Add(exam_time[e2] != t + 1).OnlyEnforceIf(is_in_slot)
 
     def apply_gurobi(self, model, problem, exam_time, exam_room):
-        room_locations = {
-            0: (0, 0),
-            1: (0, 1),
-            2: (1, 0),
-            3: (1, 1)
-        }
-        max_distance = 2
-
-        def manhattan_distance(r1, r2):
-            x1, y1 = room_locations.get(r1, (0, 0))
-            x2, y2 = room_locations.get(r2, (0, 0))
-            return abs(x1 - x2) + abs(y1 - y2)
-
-        for t in range(problem.number_of_slots):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(e1 + 1, problem.number_of_exams):
-                    # Variable for concurrent exams
-                    concurrent = model.addVar(vtype=gp.GRB.BINARY, name=f'proximity_concurrent_{e1}_{e2}_{t}')
-
-                    # Big M for constraints
+        for e1 in range(problem.number_of_exams):
+            if hasattr(problem.exams[e1], 'duration') and problem.exams[e1].duration > 120:
+                for t in range(problem.number_of_slots - 1):
+                    # Binary variable for if exam is in this slot
+                    in_slot = model.addVar(vtype=gp.GRB.BINARY, name=f'long_exam_{e1}_slot_{t}')
                     M = problem.number_of_slots + 1
 
-                    # Link concurrent variable to time slots
-                    model.addConstr(exam_time[e1] - t <= M * (1 - concurrent))
-                    model.addConstr(t - exam_time[e1] <= M * (1 - concurrent))
-                    model.addConstr(exam_time[e2] - t <= M * (1 - concurrent))
-                    model.addConstr(t - exam_time[e2] <= M * (1 - concurrent))
+                    # Link exam time to binary variable
+                    model.addConstr(exam_time[e1] - t <= M * (1 - in_slot))
+                    model.addConstr(t - exam_time[e1] <= M * (1 - in_slot))
 
-                    # For each room combination
-                    for r1 in range(problem.number_of_rooms):
-                        for r2 in range(problem.number_of_rooms):
-                            if manhattan_distance(r1, r2) > max_distance:
-                                # If exams are concurrent, forbid using distant rooms
-                                room_pair = model.addVar(vtype=gp.GRB.BINARY,
-                                                         name=f'room_pair_{e1}_{e2}_{r1}_{r2}')
+                    # If in_slot is 1, no exams in next slot
+                    for e2 in range(problem.number_of_exams):
+                        model.addConstr(exam_time[e2] != t + 1 + M * (1 - in_slot))
 
-                                # Link room assignments to room_pair variable
-                                model.addConstr(exam_room[e1] - r1 <= M * (1 - room_pair))
-                                model.addConstr(r1 - exam_room[e1] <= M * (1 - room_pair))
-                                model.addConstr(exam_room[e2] - r2 <= M * (1 - room_pair))
-                                model.addConstr(r2 - exam_room[e2] <= M * (1 - room_pair))
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        scores = []
+        for e1 in range(problem.number_of_exams):
+            if hasattr(problem.exams[e1], 'duration') and problem.exams[e1].duration > 120:
+                t1 = exam_time[e1]
+                if t1 < problem.number_of_slots - 1:  # Not last slot
+                    # Check if any exam is in next slot
+                    next_slot_free = True
+                    for e2 in range(problem.number_of_exams):
+                        if exam_time[e2] == t1 + 1:
+                            next_slot_free = False
+                            break
+                    scores.append(100 if next_slot_free else 0)
+        return sum(scores) / len(scores) if scores else 100
 
-                                # Cannot use distant rooms if concurrent
-                                model.addConstr(room_pair + concurrent <= 1)
 
-    def apply_cbc(self, model, problem, exam_time, exam_room):
-        room_locations = {
-            0: (0, 0),
-            1: (0, 1),
-            2: (1, 0),
-            3: (1, 1)
-        }
-        max_distance = 2
+class InvigilatorBreakConstraint(IConstraint):
+    """
+    Additional Constraint (Invigilator Break):
+    Each invigilator must have at least one empty time slot between their assigned exams.
+    Logic: For any invigilator i, if they are assigned to an exam in time slot t,
+    they cannot be assigned to any exam in time slot t+1.
+    """
 
-        def manhattan_distance(r1, r2):
-            x1, y1 = room_locations.get(r1, (0, 0))
-            x2, y2 = room_locations.get(r2, (0, 0))
-            return abs(x1 - x2) + abs(y1 - y2)
+    def apply_z3(self, solver, problem, exam_time, exam_room):
+        if not hasattr(problem, 'invigilators') or not problem.invigilators:
+            return
 
-        for t in range(problem.number_of_slots):
-            for e1 in range(problem.number_of_exams):
-                for e2 in range(e1 + 1, problem.number_of_exams):
-                    # Variable for concurrent exams
-                    concurrent = LpVariable(f'proximity_concurrent_{e1}_{e2}_{t}',
-                                            cat=LpBinary)
+        # For each invigilator and time slot
+        for i in range(problem.number_of_invigilators):
+            for t in range(problem.number_of_slots - 1):
+                # Find exams assigned to this invigilator in consecutive slots
+                exams_t = []
+                exams_t1 = []
+                for e1 in range(problem.number_of_exams):
+                    # If exam is assigned to this invigilator
+                    solver.add(
+                        Implies(
+                            And(exam_time[e1] == t, exam_room[e1] % problem.number_of_invigilators == i),
+                            And([
+                                Or(
+                                    exam_time[e2] != t + 1,
+                                    exam_room[e2] % problem.number_of_invigilators != i
+                                )
+                                for e2 in range(problem.number_of_exams)
+                            ])
+                        )
+                    )
 
-                    # Big M for constraints
-                    M = problem.number_of_slots + 1
+    def apply_ortools(self, model, problem, exam_time, exam_room):
+        if not hasattr(problem, 'invigilators') or not problem.invigilators:
+            return
 
-                    # Link concurrent variable to time slots
-                    model += exam_time[e1] - t <= M * (1 - concurrent)
-                    model += t - exam_time[e1] <= M * (1 - concurrent)
-                    model += exam_time[e2] - t <= M * (1 - concurrent)
-                    model += t - exam_time[e2] <= M * (1 - concurrent)
+        for i in range(problem.number_of_invigilators):
+            for t in range(problem.number_of_slots - 1):
+                # Track exams assigned to this invigilator in slot t
+                has_exam_t = model.NewBoolVar(f'invig_{i}_has_exam_slot_{t}')
+                exams_t = []
+                for e in range(problem.number_of_exams):
+                    assigned_here = model.NewBoolVar(f'invig_{i}_exam_{e}_slot_{t}')
+                    model.Add(exam_time[e] == t).OnlyEnforceIf(assigned_here)
+                    model.Add(exam_room[e] % problem.number_of_invigilators == i).OnlyEnforceIf(assigned_here)
+                    exams_t.append(assigned_here)
 
-                    # For each room combination
-                    for r1 in range(problem.number_of_rooms):
-                        for r2 in range(problem.number_of_rooms):
-                            if manhattan_distance(r1, r2) > max_distance:
-                                # If exams are concurrent, forbid using distant rooms
-                                room_pair = LpVariable(f'room_pair_{e1}_{e2}_{r1}_{r2}',
-                                                       cat=LpBinary)
+                model.Add(sum(exams_t) >= 1).OnlyEnforceIf(has_exam_t)
+                model.Add(sum(exams_t) == 0).OnlyEnforceIf(has_exam_t.Not())
 
-                                # Link room assignments to room_pair variable
-                                model += exam_time[e1] - r1 <= M * (1 - room_pair)
-                                model += r1 - exam_time[e1] <= M * (1 - room_pair)
-                                model += exam_time[e2] - r2 <= M * (1 - room_pair)
-                                model += r2 - exam_time[e2] <= M * (1 - room_pair)
+                # If has exam in t, no exams in t+1
+                for e in range(problem.number_of_exams):
+                    model.Add(
+                        exam_time[e] != t + 1
+                    ).OnlyEnforceIf([has_exam_t, exam_room[e] % problem.number_of_invigilators == i])
 
-                                # Cannot use distant rooms if concurrent
-                                model += room_pair + concurrent <= 1
+    def evaluate_metric(self, problem, exam_time, exam_room):
+        if not hasattr(problem, 'invigilators') or not problem.invigilators:
+            return 100
+
+        scores = []
+        # For each invigilator
+        for i in range(problem.number_of_invigilators):
+            # Get their exam assignments
+            assignments = []
+            for e, t in exam_time.items():
+                if exam_room[e] % problem.number_of_invigilators == i:
+                    assignments.append(t)
+
+            if assignments:
+                assignments.sort()
+                # Check consecutive assignments
+                for j in range(len(assignments) - 1):
+                    if assignments[j + 1] - assignments[j] == 1:
+                        scores.append(0)  # No break between assignments
+                    else:
+                        scores.append(100)  # Has break
+
+        return sum(scores) / len(scores) if scores else 100

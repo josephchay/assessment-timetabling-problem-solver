@@ -5,9 +5,10 @@ from pathlib import Path
 import time as time_module
 from typing import List
 
-from conditioning import RoomCapacityConstraint, TimeSlotDistributionConstraint, NoConsecutiveSlotsConstraint, \
-    RoomBalancingConstraint, RoomTransitionTimeConstraint, DepartmentGroupingConstraint, \
-    PreferredRoomSequenceConstraint, ExamDurationBalancingConstraint, InvigilatorAssignmentConstraint
+from conditioning import RoomCapacityConstraint, NoConsecutiveSlotsConstraint, \
+    RoomBalancingConstraint, DepartmentGroupingConstraint, InvigilatorAssignmentConstraint, \
+    SingleAssignmentConstraint, RoomConflictConstraint, MorningSessionPreferenceConstraint, BreakPeriodConstraint, \
+    ExamGroupSizeOptimizationConstraint, InvigilatorBreakConstraint, MaxExamsPerSlotConstraint
 from factories.solver_factory import SolverFactory
 from filesystem import ProblemFileReader
 from gui import timetablinggui
@@ -204,24 +205,26 @@ class ComparisonController:
         solver2_name = results[0]['solver2']['name']
         statistics = self._initialize_statistics()
 
-        # Updated headers with all metrics
+        # Updated headers to match actual constraints
         headers = [
-            "Inst.",
-            f"{solver1_name}",
-            f"{solver2_name}",
-            # Original Constraints
-            "Room Usage",  # RoomCapacityConstraint
-            "Time Spread",  # TimeSlotDistributionConstraint
-            "Stu. Gaps",  # NoConsecutiveSlotsConstraint
-            "Room Bal.",  # RoomBalancingConstraint
+            "Instance",  # Instance name
+            f"{solver1_name} Time",  # Solver 1 execution time
+            f"{solver2_name} Time",  # Solver 2 execution time
+
+            # Core Constraints
+            "Single Assignment",  # SingleAssignmentConstraint
+            "Room Conflicts",  # RoomConflictConstraint
+            "Room Capacity",  # RoomCapacityConstraint
+            "Student Spacing",  # NoConsecutiveSlotsConstraint
+
             # Additional Constraints
-            "Time Dist.",  # TimeSlotDistributionConstraint
-            "Trans. Time",  # RoomTransitionTimeConstraint
-            "Dept. Group",  # DepartmentGroupingConstraint
-            "Room Seq.",  # PreferredRoomSequenceConstraint
-            "Dur. Bal.",  # ExamDurationBalancingConstraint
-            "Invig. Load",  # InvigilatorAssignmentConstraint
-            "Ovl. Quality"  # Overall combined score
+            "Morning Slots",  # MorningSessionPreferenceConstraint
+            "Long Exam Breaks",  # BreakPeriodConstraint
+            "Similar Size Group",  # ExamGroupSizeOptimizationConstraint
+            "Dept. Proximity",  # DepartmentGroupingConstraint
+            "Room Balance",  # RoomBalancingConstraint
+            "Invig. Workload",  # InvigilatorBreakConstraint
+            "Overall Quality"  # Combined weighted score
         ]
 
         comparison_data = []
@@ -255,65 +258,48 @@ class ComparisonController:
                 print(f"Error processing result {result['instance_name']}: {str(e)}")
                 comparison_data.append(self._create_error_row(result['instance_name']))
 
-        # Add summary row with proper number of columns
-        summary_row = [
-            "Summary",
-            f"Wins: {statistics['solver1_wins']}",
-            f"Wins: {statistics['solver2_wins']}",
-            f"S1: {statistics['solver1_better_room']} vs S2: {statistics['solver2_better_room']}",
-            f"Ties: {statistics['ties']}",
-            f"S1: {statistics['solver1_better_student']} vs S2: {statistics['solver2_better_student']}",
-            f"Room Bal: Equal",
-            # Additional constraint summaries
-            f"S1: {statistics['solver1_better_distribution']} vs S2: {statistics['solver2_better_distribution']}",
-            f"S1: {statistics['solver1_better_transition']} vs S2: {statistics['solver2_better_transition']}",
-            f"S1: {statistics['solver1_better_department']} vs S2: {statistics['solver2_better_department']}",
-            f"S1: {statistics['solver1_better_sequence']} vs S2: {statistics['solver2_better_sequence']}",
-            f"S1: {statistics['solver1_better_duration']} vs S2: {statistics['solver2_better_duration']}",
-            f"S1: {statistics['solver1_better_invigilator']} vs S2: {statistics['solver2_better_invigilator']}",
-            "Overall Quality"
-        ]
-        comparison_data.append(summary_row)
+        # Add summary row with updated statistics
+        comparison_data.append(self._create_summary_row(statistics))
 
         # Create table widget and performance analysis
         self._create_table_widget(comparison_data, solver1_name, solver2_name, statistics, headers)
-        # self._format_column_widths()
 
     def _calculate_metrics(self, solution, problem):
-        """Calculate metrics using existing constraint classes"""
+        """Calculate metrics using implemented constraints"""
         if solution is None:
             return None
 
         try:
-            # Initialize all constraints
+            # Initialize constraint instances
+            single_assignment = SingleAssignmentConstraint()
+            room_conflict = RoomConflictConstraint()
             room_capacity = RoomCapacityConstraint()
-            time_slot_dist = TimeSlotDistributionConstraint()
-            consecutive_slots = NoConsecutiveSlotsConstraint()
-            room_balance = RoomBalancingConstraint()
-            transition_time = RoomTransitionTimeConstraint()
+            student_spacing = NoConsecutiveSlotsConstraint()
+            max_concurrent = MaxExamsPerSlotConstraint()
+            morning_pref = MorningSessionPreferenceConstraint()
+            group_size = ExamGroupSizeOptimizationConstraint()
             dept_grouping = DepartmentGroupingConstraint()
-            room_sequence = PreferredRoomSequenceConstraint()
-            duration_balance = ExamDurationBalancingConstraint()
+            room_balance = RoomBalancingConstraint()
             invig_assignment = InvigilatorAssignmentConstraint()
+            break_period = BreakPeriodConstraint()
+            invig_break = InvigilatorBreakConstraint()
 
-            # Calculate metrics using each constraint
+            # Calculate metrics for each constraint
             metrics = {
-                # Original Constraints
-                'room_usage': self._evaluate_constraint(room_capacity, problem, solution),
-                'time_spread': self._evaluate_constraint(time_slot_dist, problem, solution),
-                'student_gaps': self._evaluate_constraint(consecutive_slots, problem, solution),
+                'single_assignment': self._evaluate_constraint(single_assignment, problem, solution),
+                'room_conflicts': self._evaluate_constraint(room_conflict, problem, solution),
+                'room_capacity': self._evaluate_constraint(room_capacity, problem, solution),
+                'student_spacing': self._evaluate_constraint(student_spacing, problem, solution),
+                'max_concurrent': self._evaluate_constraint(max_concurrent, problem, solution),
+                'morning_slots': self._evaluate_constraint(morning_pref, problem, solution),
+                'break_periods': self._evaluate_constraint(break_period, problem, solution),
+                'group_size': self._evaluate_constraint(group_size, problem, solution),
+                'dept_proximity': self._evaluate_constraint(dept_grouping, problem, solution),
+                'invig_assignment': self._evaluate_constraint(invig_assignment, problem, solution),
                 'room_balance': self._evaluate_constraint(room_balance, problem, solution),
-
-                # Additional Constraints
-                'time_distribution': self._evaluate_constraint(time_slot_dist, problem, solution),
-                'transition_time': self._evaluate_constraint(transition_time, problem, solution),
-                'department_grouping': self._evaluate_constraint(dept_grouping, problem, solution),
-                'room_sequence': self._evaluate_constraint(room_sequence, problem, solution),
-                'duration_balance': self._evaluate_constraint(duration_balance, problem, solution),
-                'invigilator_load': self._evaluate_constraint(invig_assignment, problem, solution)
+                'invig_workload': self._evaluate_constraint(invig_break, problem, solution)
             }
 
-            # Ensure no zero values
             return {k: max(v, 1.0) if v is not None else 50.0 for k, v in metrics.items()}
 
         except Exception as e:
@@ -377,8 +363,7 @@ class ComparisonController:
     def _calculate_duration_balance_metric(self, solution, problem):
         """Calculate how well exam durations are balanced across time slots"""
         # Simulate exam durations based on student count
-        exam_durations = {e: min(180, 60 + problem.exams[e].get_student_count() * 2)
-                          for e in range(problem.number_of_exams)}
+        exam_durations = {e: min(180, 60 + problem.exams[e].get_student_count() * 2) for e in range(problem.number_of_exams)}
 
         slot_durations = defaultdict(int)
         for exam in solution:
@@ -434,35 +419,32 @@ class ComparisonController:
         return f"{winner} ({value1:.1f}% vs {value2:.1f}%)"
 
     def _determine_overall_quality(self, metrics1, metrics2, time1, time2):
-        """Calculate overall quality with more detailed output"""
+        """Calculate overall quality with adjusted weights"""
         weights = {
-            'time': 0.3,
-            'room_usage': 0.2,
-            'time_spread': 0.15,
-            'student_gaps': 0.2,
-            'room_balance': 0.15
+            'single_assignment': 0.15,  # Critical constraint
+            'room_conflicts': 0.15,     # Critical constraint
+            'room_capacity': 0.10,      # Physical constraint
+            'student_spacing': 0.10,    # Student welfare
+            'morning_slots': 0.05,      # Preference
+            'break_periods': 0.10,      # Operational requirement
+            'group_size': 0.05,         # Optimization
+            'dept_proximity': 0.10,     # Administrative
+            'room_balance': 0.10,       # Resource utilization
+            'invig_workload': 0.10      # Staff welfare
         }
 
-        # Normalize time scores (lower is better)
+        # Calculate weighted scores
+        score1 = sum(weights[k] * metrics1[k] for k in weights.keys())
+        score2 = sum(weights[k] * metrics2[k] for k in weights.keys())
+
+        # Add time performance weight
+        time_weight = 0.15
         max_time = max(time1, time2)
-        time_score1 = 100 * (1 - time1 / max_time) if max_time > 0 else 100
-        time_score2 = 100 * (1 - time2 / max_time) if max_time > 0 else 100
-
-        score1 = (
-            weights['time'] * time_score1 +
-            weights['room_usage'] * metrics1['room_usage'] +
-            weights['time_spread'] * metrics1['time_spread'] +
-            weights['student_gaps'] * metrics1['student_gaps'] +
-            weights['room_balance'] * metrics1['room_balance']
-        )
-
-        score2 = (
-            weights['time'] * time_score2 +
-            weights['room_usage'] * metrics2['room_usage'] +
-            weights['time_spread'] * metrics2['time_spread'] +
-            weights['student_gaps'] * metrics2['student_gaps'] +
-            weights['room_balance'] * metrics2['room_balance']
-        )
+        if max_time > 0:
+            time_score1 = 100 * (1 - time1 / max_time)
+            time_score2 = 100 * (1 - time2 / max_time)
+            score1 += time_weight * time_score1
+            score2 += time_weight * time_score2
 
         if abs(score1 - score2) < 1.0:
             return f"Equal ({score1:.1f}% overall)"
@@ -471,18 +453,30 @@ class ComparisonController:
         return f"{winner} ({max(score1, score2):.1f}% vs {min(score1, score2):.1f}%)"
 
     def _create_summary_row(self, statistics):
-        """Create a more informative summary row"""
-        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics['solver1_times'] else 0
-        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics['solver2_times'] else 0
+        """Create a summary row with the updated statistics keys"""
+        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics[
+            'solver1_times'] else 0
+        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics[
+            'solver2_times'] else 0
 
         return [
             "Summary",
             f"Wins: {statistics['solver1_wins']} (avg {solver1_avg_time:.1f}ms)",
             f"Wins: {statistics['solver2_wins']} (avg {solver2_avg_time:.1f}ms)",
-            f"Room Usage: {statistics['solver1_better_room']}-{statistics['solver2_better_room']}-{statistics['equal_room']}",
-            f"Time: {statistics['solver1_wins']}-{statistics['solver2_wins']}-{statistics['ties']}",
-            f"Students: {statistics['solver1_better_student']}-{statistics['solver2_better_student']}-{statistics['equal_student']}",
-            f"Balance: {statistics['solver1_wins']}-{statistics['solver2_wins']}-{statistics['ties']}",
+
+            # Core Constraints
+            f"S1: {statistics['solver1_better_assignment']} vs S2: {statistics['solver2_better_assignment']}",
+            f"S1: {statistics['solver1_better_conflicts']} vs S2: {statistics['solver2_better_conflicts']}",
+            f"S1: {statistics['solver1_better_capacity']} vs S2: {statistics['solver2_better_capacity']}",
+            f"S1: {statistics['solver1_better_spacing']} vs S2: {statistics['solver2_better_spacing']}",
+
+            # Additional Constraints
+            f"S1: {statistics['solver1_better_morning']} vs S2: {statistics['solver2_better_morning']}",
+            f"S1: {statistics['solver1_better_breaks']} vs S2: {statistics['solver2_better_breaks']}",
+            f"S1: {statistics['solver1_better_grouping']} vs S2: {statistics['solver2_better_grouping']}",
+            f"S1: {statistics['solver1_better_department']} vs S2: {statistics['solver2_better_department']}",
+            f"S1: {statistics['solver1_better_balance']} vs S2: {statistics['solver2_better_balance']}",
+            f"S1: {statistics['solver1_better_invigilator']} vs S2: {statistics['solver2_better_invigilator']}",
             f"Overall: S1={statistics['solver1_wins']}, S2={statistics['solver2_wins']}, Ties={statistics['ties']}"
         ]
 
@@ -516,36 +510,36 @@ class ComparisonController:
             'solver1_times': [],
             'solver2_times': [],
 
-            # Original constraints
-            'solver1_better_room': 0,
-            'solver2_better_room': 0,
-            'equal_room': 0,
-            'solver1_better_time_spread': 0,
-            'solver2_better_time_spread': 0,
-            'equal_time_spread': 0,
-            'solver1_better_student': 0,
-            'solver2_better_student': 0,
-            'equal_student': 0,
-            'solver1_better_balance': 0,
-            'solver2_better_balance': 0,
-            'equal_balance': 0,
+            # Core constraints
+            'solver1_better_assignment': 0,
+            'solver2_better_assignment': 0,
+            'equal_assignment': 0,
+            'solver1_better_conflicts': 0,
+            'solver2_better_conflicts': 0,
+            'equal_conflicts': 0,
+            'solver1_better_capacity': 0,
+            'solver2_better_capacity': 0,
+            'equal_capacity': 0,
+            'solver1_better_spacing': 0,
+            'solver2_better_spacing': 0,
+            'equal_spacing': 0,
 
             # Additional constraints
-            'solver1_better_distribution': 0,
-            'solver2_better_distribution': 0,
-            'equal_distribution': 0,
-            'solver1_better_transition': 0,
-            'solver2_better_transition': 0,
-            'equal_transition': 0,
+            'solver1_better_morning': 0,
+            'solver2_better_morning': 0,
+            'equal_morning': 0,
+            'solver1_better_breaks': 0,
+            'solver2_better_breaks': 0,
+            'equal_breaks': 0,
+            'solver1_better_grouping': 0,
+            'solver2_better_grouping': 0,
+            'equal_grouping': 0,
             'solver1_better_department': 0,
             'solver2_better_department': 0,
             'equal_department': 0,
-            'solver1_better_sequence': 0,
-            'solver2_better_sequence': 0,
-            'equal_sequence': 0,
-            'solver1_better_duration': 0,
-            'solver2_better_duration': 0,
-            'equal_duration': 0,
+            'solver1_better_balance': 0,
+            'solver2_better_balance': 0,
+            'equal_balance': 0,
             'solver1_better_invigilator': 0,
             'solver2_better_invigilator': 0,
             'equal_invigilator': 0
@@ -1107,41 +1101,41 @@ class ComparisonController:
 
     def _format_performance_text(self, solver1_name, solver2_name, solver1_avg_time, solver2_avg_time, statistics):
         return f"""Performance Analysis:
-    • {solver1_name} vs {solver2_name}
-    • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
-    • Overall Wins: {statistics['solver1_wins']} vs {statistics['solver2_wins']} ({statistics['ties']} ties)
+        • {solver1_name} vs {solver2_name}
+        • Time: {solver1_avg_time:.1f}ms vs {solver2_avg_time:.1f}ms
+        • Overall Wins: {statistics['solver1_wins']} vs {statistics['solver2_wins']} ({statistics['ties']} ties)
 
-    Original Constraints:
-    • Room Usage: {statistics['solver1_better_room']} vs {statistics['solver2_better_room']} ({statistics['equal_room']} equal)
-      (Description: How efficiently room capacity is utilized)
+        Core Constraints:
+        • Single Assignment: {statistics['solver1_better_assignment']} vs {statistics['solver2_better_assignment']} ({statistics['equal_assignment']} equal)
+          (Description: Each exam assigned exactly once to one room and time slot)
 
-    • Time Spread: {statistics['solver1_better_time_spread']} vs {statistics['solver2_better_time_spread']} ({statistics['equal_time_spread']} equal)
-      (Description: How evenly exams are distributed across time slots)
+        • Room Conflicts: {statistics['solver1_better_conflicts']} vs {statistics['solver2_better_conflicts']} ({statistics['equal_conflicts']} equal)
+          (Description: No overlapping exams in same room)
 
-    • Student Gaps: {statistics['solver1_better_student']} vs {statistics['solver2_better_student']} ({statistics['equal_student']} equal)
-      (Description: How well student exam times are spaced)
+        • Room Capacity: {statistics['solver1_better_capacity']} vs {statistics['solver2_better_capacity']} ({statistics['equal_capacity']} equal)
+          (Description: Student count within room capacity limits)
 
-    • Room Balance: {statistics['solver1_better_balance']} vs {statistics['solver2_better_balance']} ({statistics['equal_balance']} equal)
-      (Description: How evenly rooms are used across time slots)
+        • Student Spacing: {statistics['solver1_better_spacing']} vs {statistics['solver2_better_spacing']} ({statistics['equal_spacing']} equal)
+          (Description: No consecutive exams for students)
 
-    Additional Constraints:
-    • Time Distribution: {statistics['solver1_better_distribution']} vs {statistics['solver2_better_distribution']} ({statistics['equal_distribution']} equal)
-      (Description: Exam spread across available time slots)
+        Additional Constraints:
+        • Morning Sessions: {statistics['solver1_better_morning']} vs {statistics['solver2_better_morning']} ({statistics['equal_morning']} equal)
+          (Description: Morning-tagged exams scheduled before 1pm)
 
-    • Transition Time: {statistics['solver1_better_transition']} vs {statistics['solver2_better_transition']} ({statistics['equal_transition']} equal)
-      (Description: Room changeover time between exams)
+        • Long Exam Breaks: {statistics['solver1_better_breaks']} vs {statistics['solver2_better_breaks']} ({statistics['equal_breaks']} equal)
+          (Description: Empty slots after long duration exams)
 
-    • Department Grouping: {statistics['solver1_better_department']} vs {statistics['solver2_better_department']} ({statistics['equal_department']} equal)
-      (Description: Similar exams scheduled together)
+        • Size Grouping: {statistics['solver1_better_grouping']} vs {statistics['solver2_better_grouping']} ({statistics['equal_grouping']} equal)
+          (Description: Similar-sized exams in adjacent slots)
 
-    • Room Sequence: {statistics['solver1_better_sequence']} vs {statistics['solver2_better_sequence']} ({statistics['equal_sequence']} equal)
-      (Description: Efficient room allocation ordering)
+        • Department Proximity: {statistics['solver1_better_department']} vs {statistics['solver2_better_department']} ({statistics['equal_department']} equal)
+          (Description: Same-department exams in nearby rooms)
 
-    • Duration Balance: {statistics['solver1_better_duration']} vs {statistics['solver2_better_duration']} ({statistics['equal_duration']} equal)
-      (Description: Exam duration distribution)
+        • Room Balance: {statistics['solver1_better_balance']} vs {statistics['solver2_better_balance']} ({statistics['equal_balance']} equal)
+          (Description: Even distribution of room usage)
 
-    • Invigilator Load: {statistics['solver1_better_invigilator']} vs {statistics['solver2_better_invigilator']} ({statistics['equal_invigilator']} equal)
-      (Description: Staff workload distribution)"""
+        • Invigilator Breaks: {statistics['solver1_better_invigilator']} vs {statistics['solver2_better_invigilator']} ({statistics['equal_invigilator']} equal)
+          (Description: Required breaks between invigilator assignments)"""
 
     def _create_metrics_frame(self, parent):
         frame = timetablinggui.GUIFrame(
@@ -1162,22 +1156,50 @@ class ComparisonController:
 
     def _create_metrics_text(self):
         return """Metrics Guide:
-    • Room Usage: Higher % = better room capacity utilization\n  (Ideal: e.g., filling 80 seats in a 100-seat room)\n\n• Time Spread: Higher = more even exam distribution\n  (Ideal: Avoiding too many exams in same time slot)\n• Student Gaps: Higher = better spacing between exams\n  (Ideal: Avoiding back-to-back exams for students)\n\n• Room Balance: Higher = more consistent room usage\n  (Ideal: Using all rooms evenly rather than overusing some)\n\n• Time Distribution: Higher = better spread of exams\n  (Ideal: Maximizing use of available time slots)
+        Core Constraints:
+        • Single Assignment Score (Critical)
+          Ideal: 100% = Each exam has exactly one room and time assignment
+          Poor: <100% = Duplicate or missing assignments
 
-    • Transition Time: Higher = better room changeover times
-      (Ideal: Adequate gaps between exams in same room)
+        • Room Conflict Score (Critical)
+          Ideal: 100% = No overlapping exams in any room
+          Poor: Decreases by 50% per conflict in each room
 
-    • Department Grouping: Higher = better exam grouping
-      (Ideal: Related exams scheduled close together)
+        • Room Capacity Score (Physical)
+          Ideal: 80-100% = Optimal room utilization
+          Poor: >100% = Overcrowded, <50% = Underutilized
 
-    • Room Sequence: Higher = more efficient room allocation
-      (Ideal: Optimal ordering of room assignments)
+        • Student Spacing Score (Student Welfare)
+          Ideal: 100% = No consecutive exams for any student
+          Poor: 0% = Many consecutive exams, 50% = Some back-to-back
 
-    • Duration Balance: Higher = better exam time distribution
-      (Ideal: Balanced duration of exams across slots)
+        Additional Constraints:
+        • Morning Session Score (Preference)
+          Ideal: 100% = All morning-tagged exams before 1pm
+          Poor: 0% = Morning exams in afternoon slots
 
-    • Invigilator Load: Higher = better staff workload balance
-      (Ideal: Even distribution of supervision duties)
+        • Long Exam Break Score (Operational)
+          Ideal: 100% = Empty slot after each long exam
+          Poor: 0% = No breaks after long exams
 
-    • Quality: Combined score of all metrics above
-      (Ideal: Weighted average of key performance indicators)"""
+        • Size Grouping Score (Optimization)
+          Ideal: 100% = Similar-sized exams in consecutive slots
+          Poor: <50% = Random size distribution
+
+        • Department Proximity Score (Administrative)
+          Ideal: 100% = Department exams in adjacent/nearby rooms
+          Poor: <50% = Department exams scattered across building
+
+        • Room Balance Score (Resource)
+          Ideal: 90-100% = Even usage across all rooms
+          Poor: <50% = Some rooms overused, others vacant
+
+        • Invigilator Break Score (Staff Welfare)
+          Ideal: 100% = Required breaks between assignments
+          Poor: 50% = Consecutive assignments, 0% = No breaks
+
+        • Overall Quality Score
+          Weighted combination of all metrics:
+          - Core constraints: 50% total weight
+          - Additional constraints: 50% total weight
+          - Time performance: Bonus/penalty modifier"""
