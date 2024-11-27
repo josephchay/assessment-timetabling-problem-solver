@@ -157,30 +157,65 @@ class SchedulerView(timetablinggui.TimetablingGUI):
         self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
         self.status_label.grid(row=2, column=0, padx=20, pady=10)
 
-    def create_instance_frame(self, parent, instance_name, data, headers=None, solution=None, problem=None):
+    def create_instance_frame(self, parent, instance_name, data, headers=None, solution=None, problem=None, solution_time=None, is_sat_tab=False):
         instance_frame = timetablinggui.GUIFrame(parent)
         instance_frame.pack(fill="x", padx=10, pady=5)
 
+        # Header section with instance name and execution time
         header_frame = timetablinggui.GUIFrame(instance_frame)
         header_frame.pack(fill="x", padx=5, pady=5)
 
+        info_frame = timetablinggui.GUIFrame(header_frame)
+        info_frame.pack(side="left", fill="x", expand=True)
+
         instance_label = timetablinggui.GUILabel(
-            header_frame,
+            info_frame,
             text=f"Instance: {instance_name}",
             font=timetablinggui.GUIFont(size=12, weight="bold")
         )
         instance_label.pack(side="left", pady=5)
 
-        if solution is not None and problem is not None:
-            try:
-                self.visualization_manager.create_visualization_controls(
-                    header_frame, solution, problem, instance_name
-                )
-            except Exception as e:
-                print(f"Error creating visualization controls for {instance_name}: {str(e)}")
+        # Add execution time if available
+        if solution_time is not None:
+            time_label = timetablinggui.GUILabel(
+                info_frame,
+                text=f"Execution Time: {solution_time}ms",
+                font=timetablinggui.GUIFont(size=12)
+            )
+            time_label.pack(side="left", padx=(10, 0), pady=5)
 
+        # Right side: Visualization dropdown (only for SAT instances in SAT tab)
+        if is_sat_tab and solution is not None and problem is not None:
+            control_frame = timetablinggui.GUIFrame(header_frame)
+            control_frame.pack(side="right", padx=5)
+
+            def on_visualization_select(choice):
+                if choice == "View Room Utilization":
+                    self.visualization_manager._show_graph(solution, problem, instance_name, "Room Utilization")
+                elif choice == "View Time Distribution":
+                    self.visualization_manager._show_graph(solution, problem, instance_name, "Time Distribution")
+                elif choice == "View Student Spread":
+                    self.visualization_manager._show_graph(solution, problem, instance_name, "Student Spread")
+                elif choice == "View Timetable Heatmap":
+                    self.visualization_manager._show_graph(solution, problem, instance_name, "Timetable Heatmap")
+
+            visualization_menu = timetablinggui.GUIOptionMenu(
+                control_frame,
+                values=[
+                    "Select Visualization",
+                    "View Room Utilization",
+                    "View Time Distribution",
+                    "View Student Spread",
+                    "View Timetable Heatmap"
+                ],
+                variable=timetablinggui.StringVar(value="Select Visualization"),
+                command=on_visualization_select,
+                width=200
+            )
+            visualization_menu.pack(side="right")
+
+        # Create table
         if data:
-            # Use provided headers or default ones
             table_headers = headers if headers is not None else self.sat_headers
             values = [table_headers] + data
 
@@ -298,13 +333,13 @@ class SchedulerView(timetablinggui.TimetablingGUI):
         ]
 
         # Create dynamic headers based on active constraints
-        headers = ["Exam"]  # Always start with Exam column
+        headers = ["Exam"]  # Always include Exam column
 
-        # Core requirements
+        # Add base columns if single assignment is active
         if 'single_assignment' in active_constraints:
             headers.extend(["Room", "Time Slot"])
 
-        # Add additional metrics columns based on active constraints
+        # Add additional constraint columns
         constraint_display_names = {
             'room_capacity': "Room Utilization",
             'student_spacing': "Student Gap",
@@ -329,11 +364,10 @@ class SchedulerView(timetablinggui.TimetablingGUI):
             problem = result.get('problem')
 
             if solution:
-                # Process each exam in the solution
                 for exam_data in solution:
                     row = [f"Exam {exam_data['examId']}"]  # Start with exam ID
 
-                    # Add basic assignment data if single_assignment is active
+                    # Add base assignment data if single_assignment is active
                     if 'single_assignment' in active_constraints:
                         row.extend([
                             str(exam_data['room']),
@@ -350,65 +384,155 @@ class SchedulerView(timetablinggui.TimetablingGUI):
 
                     table_data.append(row)
 
-                # Create frame with the dynamic table
+                # Create frames with visualization for SAT instances
                 self.create_instance_frame(
                     self.sat_scroll,
                     result['instance_name'],
                     table_data,
                     headers=headers,
                     solution=solution,
-                    problem=problem
+                    problem=problem,
+                    solution_time=result.get('time'),
+                    is_sat_tab=True
                 )
+
+                # Also create in ALL tab
                 self.create_instance_frame(
                     self.all_scroll,
                     result['instance_name'],
                     table_data,
                     headers=headers,
                     solution=solution,
-                    problem=problem
+                    problem=problem,
+                    solution_time=result.get('time'),
+                    is_sat_tab=True
                 )
 
         # Process UNSAT results
         for result in unsat_results:
-            # Create a row with N/A values for all columns
+            # Create N/A row matching header length
             table_data = [["N/A"] * len(headers)]
-            self.create_instance_frame(
-                self.unsat_scroll,
-                result['instance_name'],
-                table_data,
-                headers=headers
-            )
-            self.create_instance_frame(
-                self.all_scroll,
-                result['instance_name'],
-                table_data,
-                headers=headers
-            )
+
+            # Create frames without visualization
+            for scroll in [self.unsat_scroll, self.all_scroll]:
+                self.create_instance_frame(
+                    scroll,
+                    result['instance_name'],
+                    table_data,
+                    headers=headers,
+                    solution_time=result.get('time'),
+                    is_sat_tab=False
+                )
 
     def _calculate_exam_metrics(self, exam_data, full_solution, problem, active_constraints):
         """Calculate metrics for a single exam based on active constraints"""
         metrics = {}
 
-        for constraint in active_constraints:
-            if constraint == 'room_capacity':
-                room = problem.rooms[exam_data['room']]
-                exam = problem.exams[exam_data['examId']]
-                utilization = (exam.get_student_count() / room.capacity * 100) if room.capacity > 0 else 0
-                metrics[constraint] = f"{utilization:.1f}%"
+        # Room Capacity
+        if 'room_capacity' in active_constraints:
+            room = problem.rooms[exam_data['room']]
+            exam = problem.exams[exam_data['examId']]
+            utilization = (exam.get_student_count() / room.capacity * 100) if room.capacity > 0 else 0
+            metrics['room_capacity'] = f"{utilization:.1f}%"
 
-            elif constraint == 'student_spacing':
-                # Calculate minimum gap to other exams for same students
-                exam = problem.exams[exam_data['examId']]
-                min_gap = float('inf')
-                for other_exam in full_solution:
-                    if other_exam['examId'] != exam_data['examId']:
-                        other = problem.exams[other_exam['examId']]
-                        if set(exam.students) & set(other.students):  # If students overlap
-                            gap = abs(other_exam['timeSlot'] - exam_data['timeSlot'])
-                            min_gap = min(min_gap, gap)
-                metrics[constraint] = str(min_gap) if min_gap != float('inf') else "N/A"
+        # Student Spacing
+        if 'student_spacing' in active_constraints:
+            exam = problem.exams[exam_data['examId']]
+            min_gap = float('inf')
+            for other_exam in full_solution:
+                if other_exam['examId'] != exam_data['examId']:
+                    other = problem.exams[other_exam['examId']]
+                    if set(exam.students) & set(other.students):  # If students overlap
+                        gap = abs(other_exam['timeSlot'] - exam_data['timeSlot'])
+                        min_gap = min(min_gap, gap)
+            metrics['student_spacing'] = str(min_gap) if min_gap != float('inf') else "N/A"
 
-            # Add similar calculations for other constraints...
+        # Max Exams Per Slot
+        if 'max_exams_per_slot' in active_constraints:
+            concurrent_count = sum(1 for e in full_solution if e['timeSlot'] == exam_data['timeSlot'])
+            metrics['max_exams_per_slot'] = str(concurrent_count)
+
+        # Morning Sessions
+        if 'morning_sessions' in active_constraints:
+            morning_slots = range(problem.number_of_slots // 2)  # First half of slots are morning
+            is_morning = exam_data['timeSlot'] in morning_slots
+            metrics['morning_sessions'] = "Morning" if is_morning else "Afternoon"
+
+        # Similar Size Groups
+        if 'exam_group_size' in active_constraints:
+            current_size = problem.exams[exam_data['examId']].get_student_count()
+            similar_exams = 0
+            threshold = 0.2  # 20% difference threshold
+
+            for other in full_solution:
+                if other['examId'] != exam_data['examId']:
+                    other_size = problem.exams[other['examId']].get_student_count()
+                    size_diff = abs(current_size - other_size) / max(current_size, other_size)
+                    if size_diff <= threshold:
+                        similar_exams += 1
+
+            metrics['exam_group_size'] = str(similar_exams)
+
+        # Department Grouping
+        if 'department_grouping' in active_constraints:
+            # Simulate departments by grouping exams into ranges
+            dept_size = max(1, problem.number_of_exams // 3)
+            current_dept = exam_data['examId'] // dept_size
+
+            dept_proximity = 0
+            for other in full_solution:
+                if other['examId'] != exam_data['examId']:
+                    other_dept = other['examId'] // dept_size
+                    if current_dept == other_dept:
+                        room_dist = abs(exam_data['room'] - other['room'])
+                        dept_proximity += max(0, 100 - room_dist * 25) / 100
+
+            metrics['department_grouping'] = f"{dept_proximity:.1f}"
+
+        # Room Balancing
+        if 'room_balancing' in active_constraints:
+            room_id = exam_data['room']
+            room_exams = sum(1 for e in full_solution if e['room'] == room_id)
+            avg_exams_per_room = len(full_solution) / problem.number_of_rooms
+            balance_score = 100 - abs(room_exams - avg_exams_per_room) * 20
+            metrics['room_balancing'] = f"{max(0, balance_score):.1f}%"
+
+        # Invigilator Assignment
+        if 'invigilator_assignment' in active_constraints:
+            invig_id = exam_data['room'] % problem.number_of_invigilators
+            invig_load = sum(1 for e in full_solution if e['room'] % problem.number_of_invigilators == invig_id)
+            max_load = 3  # Maximum allowed exams per invigilator
+            load_score = 100 - max(0, invig_load - max_load) * 25
+            metrics['invigilator_assignment'] = f"{max(0, load_score):.1f}%"
+
+        # Break Period
+        if 'break_period' in active_constraints:
+            exam = problem.exams[exam_data['examId']]
+            exam_duration = min(180, 60 + exam.get_student_count() * 2)  # Simulated duration
+            needs_break = exam_duration > 120
+            next_slot_free = True
+
+            if needs_break and exam_data['timeSlot'] < problem.number_of_slots - 1:
+                for other in full_solution:
+                    if other['timeSlot'] == exam_data['timeSlot'] + 1:
+                        next_slot_free = False
+                        break
+
+            metrics['break_period'] = "Break Available" if not needs_break or next_slot_free else "No Break"
+
+        # Invigilator Break
+        if 'invigilator_break' in active_constraints:
+            invig_id = exam_data['room'] % problem.number_of_invigilators
+            invig_slots = sorted([e['timeSlot'] for e in full_solution
+                                  if e['room'] % problem.number_of_invigilators == invig_id])
+
+            has_consecutive = False
+            for i in range(len(invig_slots) - 1):
+                if invig_slots[i + 1] - invig_slots[i] == 1:
+                    has_consecutive = True
+                    break
+
+            metrics['invigilator_break'] = "No Consecutive" if not has_consecutive else "Consecutive Slots"
 
         return metrics
 

@@ -194,27 +194,27 @@ class VisualizationManager:
             button.pack(side="left", padx=2)
             self.graph_buttons[instance_name][graph_type] = button
 
-    def _show_graph(self, analyzer: TimetableAnalyzer, graph_type: str, instance_name: str) -> None:
+    def _show_graph(self, solution, problem: SchedulingProblem, instance_name: str, graph_type: str) -> None:
         """Display the selected graph type.
 
         Args:
-            analyzer: The TimetableAnalyzer instance
-            graph_type: Type of graph to display
+            solution: The solution to visualize
+            problem: The scheduling problem instance
             instance_name: Name of the problem instance
+            graph_type: The type of graph to display
         """
+
         try:
             print(f"Showing graph {graph_type} for {instance_name}")  # Debug print
             # Store current analyzer
-            self.current_analyzer = analyzer
+            self.current_analyzer = TimetableAnalyzer(problem, solution)
 
             # Create graph window
-            analyzer.create_graph_window(graph_type, instance_name)
+            self.current_analyzer.create_graph_window(graph_type, instance_name)
 
         except Exception as e:
             # Show error in status label
-            self.view.status_label.configure(
-                text=f"Error displaying {graph_type.lower()}: {str(e)}"
-            )
+            self.view.status_label.configure(text=f"Error displaying {graph_type.lower()}: {str(e)}")
             print(f"Visualization error for {instance_name}: {str(e)}")
 
     def clear(self) -> None:

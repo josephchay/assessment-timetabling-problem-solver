@@ -38,11 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated code structure for preparations for alternative solutions.
 - Updated with minor changes in code structure.
 - Refactored to make Ortools solver analyzes the constraints better.
+- Refactored Table GUI for visualizing results to be more user-friendly.
 
-### Updated
+### Improved
 - Updated statistics visualization buttons and their information display options.
 - Updated the functionality of CBC Solver to make it more effective in comprehending all the constraints.
 - Updated the table results display for better details of statistics comparison between multiple solvers' solutions.
 - Improved the performance and metrics legend guide for multi-solvers' solution panelling logic and interface.
 - Beautified and made statistics visualization buttons more beautiful.
 - Beautified and perfected the UI design for the GUI results table for display.
+- Convert visualization options into a dropdown menu - saving space and a much cleaner GUI.
