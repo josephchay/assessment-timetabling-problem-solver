@@ -35,7 +35,7 @@ class SolverFactory:
         return results
 
     @staticmethod
-    def get_solver(name: str, problem: SchedulingProblem):
+    def get_solver(name: str, problem: SchedulingProblem, active_constraints=None):
         if name not in SolverFactory.solvers:
             raise ValueError(f"Unknown solver: {name}")
-        return SolverFactory.solvers[name](problem)
+        return SolverFactory.solvers[name](problem, active_constraints)

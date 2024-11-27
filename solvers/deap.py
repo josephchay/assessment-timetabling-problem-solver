@@ -2,12 +2,16 @@ from deap import base, creator, tools, algorithms
 import random
 from typing import Any, List, Dict
 from utilities import BaseSolver, SchedulingProblem
+from conditioning import SingleAssignmentConstraint, RoomConflictConstraint, RoomCapacityConstraint, \
+    NoConsecutiveSlotsConstraint, MaxExamsPerSlotConstraint, MorningSessionPreferenceConstraint, \
+    ExamGroupSizeOptimizationConstraint, DepartmentGroupingConstraint, RoomBalancingConstraint, \
+    InvigilatorAssignmentConstraint, BreakPeriodConstraint, InvigilatorBreakConstraint
 
 
 class DEAPSolver(BaseSolver):
     """Genetic Algorithm Solver using DEAP"""
 
-    def __init__(self, problem: SchedulingProblem):
+    def __init__(self, problem: SchedulingProblem, active_constraints=None):
         self.problem = problem
         creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
         creator.create("Individual", list, fitness=creator.FitnessMin)
@@ -27,6 +31,36 @@ class DEAPSolver(BaseSolver):
         self.toolbox.register("mate", tools.cxTwoPoint)
         self.toolbox.register("mutate", self._mutate_individual)
         self.toolbox.register("select", tools.selTournament, tournsize=3)
+
+        # Register only active constraints
+        self.constraints = []
+
+        constraint_map = {
+            'single_assignment': SingleAssignmentConstraint,
+            'room_conflicts': RoomConflictConstraint,
+            'room_capacity': RoomCapacityConstraint,
+            'student_spacing': NoConsecutiveSlotsConstraint,
+            'max_exams_per_slot': MaxExamsPerSlotConstraint,
+            'morning_sessions': MorningSessionPreferenceConstraint,
+            'exam_group_size': ExamGroupSizeOptimizationConstraint,
+            'department_grouping': DepartmentGroupingConstraint,
+            'room_balancing': RoomBalancingConstraint,
+            'invigilator_assignment': InvigilatorAssignmentConstraint,
+            'break_period': BreakPeriodConstraint,
+            'invigilator_break': InvigilatorBreakConstraint
+        }
+
+        if active_constraints is None:
+            # Use default core constraints if none specified
+            active_constraints = [
+                'single_assignment', 'room_conflicts',
+                'room_capacity', 'student_spacing',
+                'max_exams_per_slot'
+            ]
+
+        for constraint_name in active_constraints:
+            if constraint_name in constraint_map:
+                self.constraints.append(constraint_map[constraint_name]())
 
     def _evaluate_individual(self, individual):
         """Evaluate fitness of an individual"""
@@ -60,7 +94,7 @@ class DEAPSolver(BaseSolver):
                 if slots[i + 1] - slots[i] < 2:
                     penalties += 1000
 
-        return penalties,
+        return penalties
 
     def _mutate_individual(self, individual, indpb=0.05):
         """Custom mutation operator"""
@@ -69,7 +103,7 @@ class DEAPSolver(BaseSolver):
                 individual[i] = random.randint(0, self.problem.number_of_rooms - 1)
             if random.random() < indpb:
                 individual[i + 1] = random.randint(0, self.problem.number_of_slots - 1)
-        return individual,
+        return individual
 
     @staticmethod
     def get_solver_name() -> str:

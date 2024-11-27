@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added full-fledge evaluation metrics for all the original and additional constraints.
 - Feature - Added full-fledge login and registration methods for user and invigilator with privilege management.
 - Feature - Added invigilator privilege of creating student accounts, whereby students are not granted such privileges.
+- Feature - Added Constraints selection for processing under selected solver(s) for users to choose - providing a more dynamic methodology of solutions.
 
 ### Changed
 - Updated statistics visualization buttons and their information display options.

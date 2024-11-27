@@ -50,6 +50,7 @@ class SchedulerView(timetablinggui.TimetablingGUI):
         self._create_buttons()
         self._create_solver_selection()
         self._create_comparison_controls()
+        self._create_constraints_frame()
 
     def _create_logo(self):
         self.logo_label = timetablinggui.GUILabel(
@@ -203,6 +204,95 @@ class SchedulerView(timetablinggui.TimetablingGUI):
             table.pack(fill="both", expand=True, padx=10, pady=5)
 
         return instance_frame
+
+    def _create_constraints_frame(self):
+        self.constraints_frame = timetablinggui.GUIFrame(self.sidebar_frame)
+        # Change row to 8 and remove weight to avoid stretching
+        self.constraints_frame.grid(row=8, column=0, padx=20, pady=10, sticky="ew")
+
+        constraints_label = timetablinggui.GUILabel(
+            self.constraints_frame,
+            text="Select Constraints:",
+            font=timetablinggui.GUIFont(size=12)
+        )
+        constraints_label.pack(pady=5)
+
+        # Create constraint checkboxes
+        self.constraint_vars = {
+            # Core Constraints
+            'single_assignment': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Single Assignment",
+                onvalue=True, offvalue=False
+            ),
+            'room_conflicts': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Room Conflicts",
+                onvalue=True, offvalue=False
+            ),
+            'room_capacity': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Room Capacity",
+                onvalue=True, offvalue=False
+            ),
+            'student_spacing': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Student Spacing",
+                onvalue=True, offvalue=False
+            ),
+            'max_exams_per_slot': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Max Exams Per Slot",
+                onvalue=True, offvalue=False
+            ),
+
+            # Additional Constraints
+            'morning_sessions': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Morning Sessions",
+                onvalue=True, offvalue=False
+            ),
+            'exam_group_size': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Similar Size Groups",
+                onvalue=True, offvalue=False
+            ),
+            'department_grouping': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Department Grouping",
+                onvalue=True, offvalue=False
+            ),
+            'room_balancing': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Room Balancing",
+                onvalue=True, offvalue=False
+            ),
+            'invigilator_assignment': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Invigilator Assignment",
+                onvalue=True, offvalue=False
+            ),
+            'break_period': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Break Period",
+                onvalue=True, offvalue=False
+            ),
+            'invigilator_break': timetablinggui.GUISwitch(
+                self.constraints_frame,
+                text="Invigilator Break",
+                onvalue=True, offvalue=False
+            )
+        }
+
+        # Set default values and pack switches
+        for name, switch in self.constraint_vars.items():
+            # Set core constraints on by default
+            switch.select() if name in [
+                'single_assignment', 'room_conflicts',
+                'room_capacity', 'student_spacing',
+                'max_exams_per_slot'
+            ] else switch.deselect()
+            switch.pack(pady=2)
 
     def create_tables(self, sat_results, unsat_results):
         for scroll in [self.all_scroll, self.sat_scroll, self.unsat_scroll]:

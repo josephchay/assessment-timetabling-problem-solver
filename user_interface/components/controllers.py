@@ -36,11 +36,17 @@ class SchedulerController:
         if not self._validate_solver_selection(solver1, solver2):
             return
 
+        # Get active constraints
+        active_constraints = [
+            name for name, switch in self.view.constraint_vars.items()
+            if switch.get()
+        ]
+
         self.view.clear_results()
         self.view.results_notebook.set("All")
         self.view.update_idletasks()
 
-        self._process_files(solver1, solver2)
+        self._process_files(solver1, solver2, active_constraints)
 
     def _validate_solver_selection(self, solver1, solver2):
         if solver1 == "Select Solver":
@@ -57,7 +63,7 @@ class SchedulerController:
 
         return True
 
-    def _process_files(self, solver1, solver2):
+    def _process_files(self, solver1, solver2, active_constraints):
         comparison_results = []
         unsat_results = []
         total_solution_time = 0
@@ -74,7 +80,7 @@ class SchedulerController:
                 self._process_single_file(
                     test_file, solver1, solver2,
                     comparison_results, unsat_results, total_solution_time,
-                    i, total_files
+                    i, total_files, active_constraints  # Pass active_constraints here
                 )
             except Exception as e:
                 print(f"Error processing {test_file.name}: {str(e)}")
@@ -82,7 +88,8 @@ class SchedulerController:
 
         self._display_results(solver1, solver2, comparison_results, unsat_results, total_solution_time)
 
-    def _process_single_file(self, test_file, solver1, solver2, comparison_results, unsat_results, total_solution_time, current_index, total_files):
+    def _process_single_file(self, test_file, solver1, solver2, comparison_results, unsat_results,
+                             total_solution_time, current_index, total_files, active_constraints):
         """Process a single test file and update the results."""
         self.view.status_label.configure(text=f"Processing {test_file.name}...")
         self.view.progressbar.set((current_index + 1) / total_files)
@@ -91,9 +98,9 @@ class SchedulerController:
         problem = ProblemFileReader.read_file(str(test_file))
         self.view.current_problem = problem
 
-        # Process first solver
+        # Process first solver with active constraints
         start_time1 = time_module.time()
-        solver1_instance = SolverFactory.get_solver(solver1, problem)
+        solver1_instance = SolverFactory.get_solver(solver1, problem, active_constraints)
         solution1 = solver1_instance.solve()
         time1 = int((time_module.time() - start_time1) * 1000)
         total_solution_time += time1
@@ -102,7 +109,6 @@ class SchedulerController:
             # Single solver mode
             if solution1:
                 formatted_solution = self.view.format_solution(solution1)
-                # Include both solution and problem in the results dictionary
                 comparison_results.append({
                     'instance_name': test_file.stem,
                     'solution': solution1,
@@ -117,14 +123,13 @@ class SchedulerController:
                 })
         else:
             # Comparison mode
-            # Process second solver
             start_time2 = time_module.time()
-            solver2_instance = SolverFactory.get_solver(solver2, problem)
+            solver2_instance = SolverFactory.get_solver(solver2, problem,
+                                                        active_constraints)  # Use active_constraints here too
             solution2 = solver2_instance.solve()
             time2 = int((time_module.time() - start_time2) * 1000)
             total_solution_time += time2
 
-            # Create formatted solutions for both solvers
             formatted_solution1 = self.view.format_solution(solution1) if solution1 else "N/A"
             formatted_solution2 = self.view.format_solution(solution2) if solution2 else "N/A"
 
@@ -148,8 +153,8 @@ class SchedulerController:
                         'formatted_solution': formatted_solution2,
                         'time': time2
                     },
-                    'problem': problem,  # Include the problem object in both modes
-                    'time': time1  # Include time for backward compatibility
+                    'problem': problem,
+                    'time': time1
                 })
 
     def _display_results(self, solver1, solver2, comparison_results, unsat_results, total_solution_time):
@@ -454,10 +459,8 @@ class ComparisonController:
 
     def _create_summary_row(self, statistics):
         """Create a summary row with the updated statistics keys"""
-        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics[
-            'solver1_times'] else 0
-        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics[
-            'solver2_times'] else 0
+        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics['solver1_times'] else 0
+        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics['solver2_times'] else 0
 
         return [
             "Summary",
