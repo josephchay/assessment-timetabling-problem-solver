@@ -25,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added full-fledge login and registration methods for user and invigilator with privilege management.
 - Feature - Added invigilator privilege of creating student accounts, whereby students are not granted such privileges.
 - Feature - Added Constraints selection for processing under selected solver(s) for users to choose - providing a more dynamic methodology of solutions.
+- Feature - Made Display Tables for mutli-solvers to be extremely versatile reflecting results, metrics, performance displayed according to the user's selected constraints.
+- Feature - Made Display Tables for single solvers to be extremely versatile reflecting results, metrics, performance displayed according to the user's selected constraints.
 
 ### Changed
 - Made space between statistics buttons and visualization options more.
@@ -44,4 +46,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved the performance and metrics legend guide for multi-solvers' solution panelling logic and interface.
 - Beautified and made statistics visualization buttons more beautiful.
 - Beautified and perfected the UI design for the GUI results table for display.
-- Made Display Tables for mutli-solvers to be extremely versatile reflecting results, metrics, performance displayed according to the user's selected constraints.

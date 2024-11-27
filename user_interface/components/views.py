@@ -157,17 +157,7 @@ class SchedulerView(timetablinggui.TimetablingGUI):
         self.status_label = timetablinggui.GUILabel(self.main_frame, text="Ready")
         self.status_label.grid(row=2, column=0, padx=20, pady=10)
 
-    def create_instance_frame(self, parent, instance_name, data, solution=None, problem=None):
-        """Create a frame for displaying instance data with optional visualization controls.
-
-        Args:
-            parent: Parent widget
-            instance_name: Name of the instance
-            data: Table data to display
-            solution: Optional solution object
-            problem: Optional problem object
-        """
-
+    def create_instance_frame(self, parent, instance_name, data, headers=None, solution=None, problem=None):
         instance_frame = timetablinggui.GUIFrame(parent)
         instance_frame.pack(fill="x", padx=10, pady=5)
 
@@ -181,10 +171,8 @@ class SchedulerView(timetablinggui.TimetablingGUI):
         )
         instance_label.pack(side="left", pady=5)
 
-        # Only create visualization controls if we have both solution and problem
         if solution is not None and problem is not None:
             try:
-                print(f"Creating visualization for {instance_name}")  # Debug print
                 self.visualization_manager.create_visualization_controls(
                     header_frame, solution, problem, instance_name
                 )
@@ -192,11 +180,14 @@ class SchedulerView(timetablinggui.TimetablingGUI):
                 print(f"Error creating visualization controls for {instance_name}: {str(e)}")
 
         if data:
-            values = [self.sat_headers] + data
+            # Use provided headers or default ones
+            table_headers = headers if headers is not None else self.sat_headers
+            values = [table_headers] + data
+
             table = timetablinggui.TableManager(
                 master=instance_frame,
                 row=len(values),
-                column=len(self.sat_headers),
+                column=len(table_headers),
                 values=values,
                 header_color=("gray70", "gray30"),
                 hover=False
@@ -295,47 +286,131 @@ class SchedulerView(timetablinggui.TimetablingGUI):
             switch.pack(pady=2)
 
     def create_tables(self, sat_results, unsat_results):
+        # Clear existing tables
         for scroll in [self.all_scroll, self.sat_scroll, self.unsat_scroll]:
             for widget in scroll.winfo_children():
                 widget.destroy()
 
+        # Get active constraints
+        active_constraints = [
+            name for name, switch in self.constraint_vars.items()
+            if switch.get()
+        ]
+
+        # Create dynamic headers based on active constraints
+        headers = ["Exam"]  # Always start with Exam column
+
+        # Core requirements
+        if 'single_assignment' in active_constraints:
+            headers.extend(["Room", "Time Slot"])
+
+        # Add additional metrics columns based on active constraints
+        constraint_display_names = {
+            'room_capacity': "Room Utilization",
+            'student_spacing': "Student Gap",
+            'max_exams_per_slot': "Concurrent Exams",
+            'morning_sessions': "Morning Status",
+            'exam_group_size': "Group Size Score",
+            'department_grouping': "Dept. Proximity",
+            'room_balancing': "Room Balance",
+            'invigilator_assignment': "Invig. Coverage",
+            'break_period': "Break Status",
+            'invigilator_break': "Invig. Load"
+        }
+
+        for constraint in active_constraints:
+            if constraint in constraint_display_names:
+                headers.append(constraint_display_names[constraint])
+
+        # Process SAT results
         for result in sat_results:
             table_data = []
-            for line in result['formatted_solution'].split('\n'):
-                if line.strip():
-                    exam = line.split(': ')[0].replace("Exam", "")
-                    room_time = line.split(': ')[1].split(', ')
-                    room = room_time[0].split(' ')[1]
-                    time = room_time[1].split(' ')[2]
-                    table_data.append([exam, room, time])
+            solution = result.get('solution', [])
+            problem = result.get('problem')
 
-            self.create_instance_frame(
-                self.sat_scroll,
-                result['instance_name'],
-                table_data,
-                solution=result.get('solution'),
-                problem=result.get('problem')
-            )
-            self.create_instance_frame(
-                self.all_scroll,
-                result['instance_name'],
-                table_data,
-                solution=result.get('solution'),
-                problem=result.get('problem')
-            )
+            if solution:
+                # Process each exam in the solution
+                for exam_data in solution:
+                    row = [f"Exam {exam_data['examId']}"]  # Start with exam ID
 
+                    # Add basic assignment data if single_assignment is active
+                    if 'single_assignment' in active_constraints:
+                        row.extend([
+                            str(exam_data['room']),
+                            str(exam_data['timeSlot'])
+                        ])
+
+                    # Calculate metrics for each active constraint
+                    metrics = self._calculate_exam_metrics(exam_data, solution, problem, active_constraints)
+
+                    # Add metric values to the row
+                    for constraint in active_constraints:
+                        if constraint in constraint_display_names:
+                            row.append(metrics.get(constraint, "N/A"))
+
+                    table_data.append(row)
+
+                # Create frame with the dynamic table
+                self.create_instance_frame(
+                    self.sat_scroll,
+                    result['instance_name'],
+                    table_data,
+                    headers=headers,
+                    solution=solution,
+                    problem=problem
+                )
+                self.create_instance_frame(
+                    self.all_scroll,
+                    result['instance_name'],
+                    table_data,
+                    headers=headers,
+                    solution=solution,
+                    problem=problem
+                )
+
+        # Process UNSAT results
         for result in unsat_results:
-            table_data = [["N/A", "N/A", "N/A"]]
+            # Create a row with N/A values for all columns
+            table_data = [["N/A"] * len(headers)]
             self.create_instance_frame(
                 self.unsat_scroll,
                 result['instance_name'],
-                table_data
+                table_data,
+                headers=headers
             )
             self.create_instance_frame(
                 self.all_scroll,
                 result['instance_name'],
-                table_data
+                table_data,
+                headers=headers
             )
+
+    def _calculate_exam_metrics(self, exam_data, full_solution, problem, active_constraints):
+        """Calculate metrics for a single exam based on active constraints"""
+        metrics = {}
+
+        for constraint in active_constraints:
+            if constraint == 'room_capacity':
+                room = problem.rooms[exam_data['room']]
+                exam = problem.exams[exam_data['examId']]
+                utilization = (exam.get_student_count() / room.capacity * 100) if room.capacity > 0 else 0
+                metrics[constraint] = f"{utilization:.1f}%"
+
+            elif constraint == 'student_spacing':
+                # Calculate minimum gap to other exams for same students
+                exam = problem.exams[exam_data['examId']]
+                min_gap = float('inf')
+                for other_exam in full_solution:
+                    if other_exam['examId'] != exam_data['examId']:
+                        other = problem.exams[other_exam['examId']]
+                        if set(exam.students) & set(other.students):  # If students overlap
+                            gap = abs(other_exam['timeSlot'] - exam_data['timeSlot'])
+                            min_gap = min(min_gap, gap)
+                metrics[constraint] = str(min_gap) if min_gap != float('inf') else "N/A"
+
+            # Add similar calculations for other constraints...
+
+        return metrics
 
     def clear_results(self):
         for scroll in [self.all_scroll, self.sat_scroll, self.unsat_scroll]:
