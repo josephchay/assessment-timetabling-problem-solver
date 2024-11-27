@@ -27,19 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Feature - Added Constraints selection for processing under selected solver(s) for users to choose - providing a more dynamic methodology of solutions.
 
 ### Changed
-- Updated statistics visualization buttons and their information display options.
 - Made space between statistics buttons and visualization options more.
-- Updated the functionality of CBC Solver to make it more effective in comprehending all the constraints.
 - Renewed the solution timers to be more user friendly by including both milliseconds and the combination of minutes and seconds.
-- Updated the table results display for better details of statistics comparison between multiple solvers' solutions.
-- Improved the performance and metrics legend guide for multi-solvers' solution panelling logic and interface.
 - Refactored the GUIManager into multiple clean class codes.
-- Beautified and made statistics visualization buttons more beautiful.
-- Beautified and perfected the UI design for the GUI results table for display.
--
 
 ### Refactoring
 - Updated code structure to be more clean through Separation of Concerns.
 - Updated code structure for preparations for alternative solutions.
 - Updated with minor changes in code structure.
 - Refactored to make Ortools solver analyzes the constraints better.
+
+### Updated
+- Updated statistics visualization buttons and their information display options.
+- Updated the functionality of CBC Solver to make it more effective in comprehending all the constraints.
+- Updated the table results display for better details of statistics comparison between multiple solvers' solutions.
+- Improved the performance and metrics legend guide for multi-solvers' solution panelling logic and interface.
+- Beautified and made statistics visualization buttons more beautiful.
+- Beautified and perfected the UI design for the GUI results table for display.
+- Made Display Tables for mutli-solvers to be extremely versatile reflecting results, metrics, performance displayed according to the user's selected constraints.

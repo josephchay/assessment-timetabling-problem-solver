@@ -167,7 +167,17 @@ class SchedulerController:
         if self.view.comparison_mode_var.get():
             print(f"\nProcessing comparison between {solver1} and {solver2}")
             print(f"Number of results to compare: {len(comparison_results)}")
-            self.view.after(100, lambda: self.view.comparison_controller.create_comparison_table(comparison_results))
+
+            active_constraints = [
+                name for name, switch in self.view.constraint_vars.items()
+                if switch.get()
+            ]
+
+            # Pass active_constraints to create_comparison_table
+            self.view.after(100, lambda: self.view.comparison_controller.create_comparison_table(
+                comparison_results,
+                active_constraints
+            ))
         else:
             # Convert results to the format expected by create_tables
             formatted_results = []
@@ -187,6 +197,21 @@ class SchedulerController:
             text=f"Completed! Processed {len(comparison_results) + len(unsat_results)} instances in {formatted_final_time}"
         )
 
+        if self.view.comparison_mode_var.get():
+            print(f"\nProcessing comparison between {solver1} and {solver2}")
+            print(f"Number of results to compare: {len(comparison_results)}")
+
+            # Get active constraints
+            active_constraints = [
+                name for name, switch in self.view.constraint_vars.items()
+                if switch.get()
+            ]
+
+            self.view.after(100, lambda: self.view.comparison_controller.create_comparison_table(
+                comparison_results,
+                active_constraints
+            ))
+
 
 class ComparisonController:
     def __init__(self, view):
@@ -200,7 +225,7 @@ class ComparisonController:
             self.view.second_solver_label.grid_remove()
             self.view.second_solver_menu.grid_remove()
 
-    def create_comparison_table(self, results):
+    def create_comparison_table(self, results, active_constraints):
         """Create comparison table with key metrics"""
         if not results:
             self._show_no_results_message()
@@ -210,27 +235,8 @@ class ComparisonController:
         solver2_name = results[0]['solver2']['name']
         statistics = self._initialize_statistics()
 
-        # Updated headers to match actual constraints
-        headers = [
-            "Instance",  # Instance name
-            f"{solver1_name} Time",  # Solver 1 execution time
-            f"{solver2_name} Time",  # Solver 2 execution time
-
-            # Core Constraints
-            "Single Assignment",  # SingleAssignmentConstraint
-            "Room Conflicts",  # RoomConflictConstraint
-            "Room Capacity",  # RoomCapacityConstraint
-            "Student Spacing",  # NoConsecutiveSlotsConstraint
-
-            # Additional Constraints
-            "Morning Slots",  # MorningSessionPreferenceConstraint
-            "Long Exam Breaks",  # BreakPeriodConstraint
-            "Similar Size Group",  # ExamGroupSizeOptimizationConstraint
-            "Dept. Proximity",  # DepartmentGroupingConstraint
-            "Room Balance",  # RoomBalancingConstraint
-            "Invig. Workload",  # InvigilatorBreakConstraint
-            "Overall Quality"  # Combined weighted score
-        ]
+        # Get dynamic headers based on active constraints
+        headers = self._get_dynamic_headers(solver1_name, solver2_name, active_constraints)
 
         comparison_data = []
         for result in results:
@@ -246,8 +252,8 @@ class ComparisonController:
                 if solution2 is not None:
                     statistics['solver2_times'].append(time2)
 
-                metrics1 = self._calculate_metrics(solution1, problem) if solution1 else None
-                metrics2 = self._calculate_metrics(solution2, problem) if solution2 else None
+                metrics1 = self._calculate_metrics(solution1, problem, active_constraints) if solution1 else None
+                metrics2 = self._calculate_metrics(solution2, problem, active_constraints) if solution2 else None
 
                 row = self._create_comparison_row(
                     result['instance_name'],
@@ -255,55 +261,83 @@ class ComparisonController:
                     time2,
                     metrics1,
                     metrics2,
-                    statistics
+                    statistics,
+                    active_constraints
                 )
                 comparison_data.append(row)
 
             except Exception as e:
                 print(f"Error processing result {result['instance_name']}: {str(e)}")
-                comparison_data.append(self._create_error_row(result['instance_name']))
+                comparison_data.append(self._create_error_row(result['instance_name'], len(headers)))
 
-        # Add summary row with updated statistics
-        comparison_data.append(self._create_summary_row(statistics))
+        # Add summary row
+        comparison_data.append(self._create_summary_row(statistics, active_constraints))
 
         # Create table widget and performance analysis
         self._create_table_widget(comparison_data, solver1_name, solver2_name, statistics, headers)
 
-    def _calculate_metrics(self, solution, problem):
+    def _get_dynamic_headers(self, solver1_name, solver2_name, active_constraints):
+        """Generate table headers based on active constraints"""
+        headers = [
+            "Instance",
+            f"{solver1_name} Time",
+            f"{solver2_name} Time"
+        ]
+
+        # Mapping of constraint names to display names
+        constraint_display_names = {
+            'single_assignment': "Single Assignment",
+            'room_conflicts': "Room Conflicts",
+            'room_capacity': "Room Capacity",
+            'student_spacing': "Student Spacing",
+            'max_exams_per_slot': "Max Exams/Slot",
+            'morning_sessions': "Morning Slots",
+            'exam_group_size': "Similar Size Group",
+            'department_grouping': "Dept. Proximity",
+            'room_balancing': "Room Balance",
+            'invigilator_assignment': "Invig. Assignment",
+            'break_period': "Long Exam Breaks",
+            'invigilator_break': "Invig. Workload"
+        }
+
+        # Add headers for active constraints
+        for constraint in active_constraints:
+            if constraint in constraint_display_names:
+                headers.append(constraint_display_names[constraint])
+
+        # Always add overall quality at the end
+        headers.append("Overall Quality")
+
+        return headers
+
+    def _calculate_metrics(self, solution, problem, active_constraints):
         """Calculate metrics using implemented constraints"""
         if solution is None:
             return None
 
         try:
-            # Initialize constraint instances
-            single_assignment = SingleAssignmentConstraint()
-            room_conflict = RoomConflictConstraint()
-            room_capacity = RoomCapacityConstraint()
-            student_spacing = NoConsecutiveSlotsConstraint()
-            max_concurrent = MaxExamsPerSlotConstraint()
-            morning_pref = MorningSessionPreferenceConstraint()
-            group_size = ExamGroupSizeOptimizationConstraint()
-            dept_grouping = DepartmentGroupingConstraint()
-            room_balance = RoomBalancingConstraint()
-            invig_assignment = InvigilatorAssignmentConstraint()
-            break_period = BreakPeriodConstraint()
-            invig_break = InvigilatorBreakConstraint()
-
-            # Calculate metrics for each constraint
-            metrics = {
-                'single_assignment': self._evaluate_constraint(single_assignment, problem, solution),
-                'room_conflicts': self._evaluate_constraint(room_conflict, problem, solution),
-                'room_capacity': self._evaluate_constraint(room_capacity, problem, solution),
-                'student_spacing': self._evaluate_constraint(student_spacing, problem, solution),
-                'max_concurrent': self._evaluate_constraint(max_concurrent, problem, solution),
-                'morning_slots': self._evaluate_constraint(morning_pref, problem, solution),
-                'break_periods': self._evaluate_constraint(break_period, problem, solution),
-                'group_size': self._evaluate_constraint(group_size, problem, solution),
-                'dept_proximity': self._evaluate_constraint(dept_grouping, problem, solution),
-                'invig_assignment': self._evaluate_constraint(invig_assignment, problem, solution),
-                'room_balance': self._evaluate_constraint(room_balance, problem, solution),
-                'invig_workload': self._evaluate_constraint(invig_break, problem, solution)
+            # Map constraint names to their classes
+            constraint_classes = {
+                'single_assignment': SingleAssignmentConstraint,
+                'room_conflicts': RoomConflictConstraint,
+                'room_capacity': RoomCapacityConstraint,
+                'student_spacing': NoConsecutiveSlotsConstraint,
+                'max_exams_per_slot': MaxExamsPerSlotConstraint,
+                'morning_sessions': MorningSessionPreferenceConstraint,
+                'exam_group_size': ExamGroupSizeOptimizationConstraint,
+                'department_grouping': DepartmentGroupingConstraint,
+                'room_balancing': RoomBalancingConstraint,
+                'invigilator_assignment': InvigilatorAssignmentConstraint,
+                'break_period': BreakPeriodConstraint,
+                'invigilator_break': InvigilatorBreakConstraint
             }
+
+            metrics = {}
+            # Only calculate metrics for active constraints
+            for constraint_name in active_constraints:
+                if constraint_name in constraint_classes:
+                    constraint = constraint_classes[constraint_name]()
+                    metrics[constraint_name] = self._evaluate_constraint(constraint, problem, solution)
 
             return {k: max(v, 1.0) if v is not None else 50.0 for k, v in metrics.items()}
 
@@ -423,24 +457,37 @@ class ComparisonController:
         winner = "S1" if (is_time and value1 < value2) or (not is_time and value1 > value2) else "S2"
         return f"{winner} ({value1:.1f}% vs {value2:.1f}%)"
 
-    def _determine_overall_quality(self, metrics1, metrics2, time1, time2):
+    def _determine_overall_quality(self, metrics1, metrics2, time1, time2, active_constraints):
         """Calculate overall quality with adjusted weights"""
         weights = {
             'single_assignment': 0.15,  # Critical constraint
-            'room_conflicts': 0.15,     # Critical constraint
-            'room_capacity': 0.10,      # Physical constraint
-            'student_spacing': 0.10,    # Student welfare
-            'morning_slots': 0.05,      # Preference
-            'break_periods': 0.10,      # Operational requirement
-            'group_size': 0.05,         # Optimization
-            'dept_proximity': 0.10,     # Administrative
-            'room_balance': 0.10,       # Resource utilization
-            'invig_workload': 0.10      # Staff welfare
+            'room_conflicts': 0.15,  # Critical constraint
+            'room_capacity': 0.10,  # Physical constraint
+            'student_spacing': 0.10,  # Student welfare
+            'morning_sessions': 0.05,  # Preference
+            'break_period': 0.10,  # Operational requirement
+            'exam_group_size': 0.05,  # Optimization
+            'department_grouping': 0.10,  # Administrative
+            'room_balancing': 0.10,  # Resource utilization
+            'invigilator_break': 0.10  # Staff welfare
         }
 
-        # Calculate weighted scores
-        score1 = sum(weights[k] * metrics1[k] for k in weights.keys())
-        score2 = sum(weights[k] * metrics2[k] for k in weights.keys())
+        # Calculate weighted scores only for active constraints
+        score1 = 0
+        score2 = 0
+        total_weight = 0
+
+        for constraint in active_constraints:
+            if constraint in weights and constraint in metrics1 and constraint in metrics2:
+                weight = weights[constraint]
+                score1 += weight * metrics1[constraint]
+                score2 += weight * metrics2[constraint]
+                total_weight += weight
+
+        # Normalize scores if we have any weights
+        if total_weight > 0:
+            score1 = score1 / total_weight * 100
+            score2 = score2 / total_weight * 100
 
         # Add time performance weight
         time_weight = 0.15
@@ -448,8 +495,8 @@ class ComparisonController:
         if max_time > 0:
             time_score1 = 100 * (1 - time1 / max_time)
             time_score2 = 100 * (1 - time2 / max_time)
-            score1 += time_weight * time_score1
-            score2 += time_weight * time_score2
+            score1 = score1 * (1 - time_weight) + time_score1 * time_weight
+            score2 = score2 * (1 - time_weight) + time_score2 * time_weight
 
         if abs(score1 - score2) < 1.0:
             return f"Equal ({score1:.1f}% overall)"
@@ -457,31 +504,36 @@ class ComparisonController:
         winner = "S1" if score1 > score2 else "S2"
         return f"{winner} ({max(score1, score2):.1f}% vs {min(score1, score2):.1f}%)"
 
-    def _create_summary_row(self, statistics):
+    def _create_summary_row(self, statistics, active_constraints):
         """Create a summary row with the updated statistics keys"""
-        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics['solver1_times'] else 0
-        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics['solver2_times'] else 0
+        solver1_avg_time = (sum(statistics['solver1_times']) / len(statistics['solver1_times'])) if statistics[
+            'solver1_times'] else 0
+        solver2_avg_time = (sum(statistics['solver2_times']) / len(statistics['solver2_times'])) if statistics[
+            'solver2_times'] else 0
 
-        return [
+        # Start with basic info
+        summary = [
             "Summary",
             f"Wins: {statistics['solver1_wins']} (avg {solver1_avg_time:.1f}ms)",
             f"Wins: {statistics['solver2_wins']} (avg {solver2_avg_time:.1f}ms)",
-
-            # Core Constraints
-            f"S1: {statistics['solver1_better_assignment']} vs S2: {statistics['solver2_better_assignment']}",
-            f"S1: {statistics['solver1_better_conflicts']} vs S2: {statistics['solver2_better_conflicts']}",
-            f"S1: {statistics['solver1_better_capacity']} vs S2: {statistics['solver2_better_capacity']}",
-            f"S1: {statistics['solver1_better_spacing']} vs S2: {statistics['solver2_better_spacing']}",
-
-            # Additional Constraints
-            f"S1: {statistics['solver1_better_morning']} vs S2: {statistics['solver2_better_morning']}",
-            f"S1: {statistics['solver1_better_breaks']} vs S2: {statistics['solver2_better_breaks']}",
-            f"S1: {statistics['solver1_better_grouping']} vs S2: {statistics['solver2_better_grouping']}",
-            f"S1: {statistics['solver1_better_department']} vs S2: {statistics['solver2_better_department']}",
-            f"S1: {statistics['solver1_better_balance']} vs S2: {statistics['solver2_better_balance']}",
-            f"S1: {statistics['solver1_better_invigilator']} vs S2: {statistics['solver2_better_invigilator']}",
-            f"Overall: S1={statistics['solver1_wins']}, S2={statistics['solver2_wins']}, Ties={statistics['ties']}"
         ]
+
+        # Add statistics for each active constraint
+        for constraint in active_constraints:
+            if constraint in statistics:
+                s1_better = statistics[f'solver1_better_{constraint}']
+                s2_better = statistics[f'solver2_better_{constraint}']
+                equal = statistics[f'equal_{constraint}']
+                summary.append(f"S1: {s1_better} vs S2: {s2_better} ({equal} equal)")
+            else:
+                summary.append("N/A")
+
+        # Add overall summary
+        summary.append(
+            f"Overall: S1={statistics['solver1_wins']}, S2={statistics['solver2_wins']}, Ties={statistics['ties']}"
+        )
+
+        return summary
 
     def _evaluate_constraint(self, constraint, problem, solution):
         """Convert solution format and evaluate constraint metric"""
@@ -581,55 +633,46 @@ class ComparisonController:
 
         return comparison_data
 
-    def _create_comparison_row(self, instance_name, time1, time2, metrics1, metrics2, statistics):
+    def _create_comparison_row(self, instance_name, time1, time2, metrics1, metrics2, statistics, active_constraints):
         """Create a row comparing all metrics between two solutions."""
         if metrics1 is None and metrics2 is None:
-            return self._create_unsat_row(instance_name)
+            return self._create_unsat_row(instance_name, len(active_constraints) + 4)  # +4 for instance, times, and overall
         elif metrics1 is None:
-            return self._create_partial_sat_row(instance_name, False, time2)
+            return self._create_partial_sat_row(instance_name, False, time2, len(active_constraints) + 4)
         elif metrics2 is None:
-            return self._create_partial_sat_row(instance_name, True, time1)
+            return self._create_partial_sat_row(instance_name, True, time1, len(active_constraints) + 4)
 
-        # Original Constraints
-        room_usage_comp = self._format_comparison(metrics1['room_usage'], metrics2['room_usage'])
-        time_spread_comp = self._format_comparison(metrics1['time_spread'], metrics2['time_spread'])
-        student_gaps_comp = self._format_comparison(metrics1['student_gaps'], metrics2['student_gaps'])
-        room_balance_comp = self._format_comparison(metrics1['room_balance'], metrics2['room_balance'])
+        # Start with basic info
+        row = [instance_name, f"{time1}ms", f"{time2}ms"]
 
-        # Additional Constraints
-        time_dist_comp = self._format_comparison(metrics1['time_distribution'], metrics2['time_distribution'])
-        trans_time_comp = self._format_comparison(metrics1['transition_time'], metrics2['transition_time'])
-        dept_group_comp = self._format_comparison(metrics1['department_grouping'], metrics2['department_grouping'])
-        room_seq_comp = self._format_comparison(metrics1['room_sequence'], metrics2['room_sequence'])
-        dur_bal_comp = self._format_comparison(metrics1['duration_balance'], metrics2['duration_balance'])
-        invig_load_comp = self._format_comparison(metrics1['invigilator_load'], metrics2['invigilator_load'])
+        # Add comparisons for active constraints
+        for constraint in active_constraints:
+            if constraint in metrics1 and constraint in metrics2:
+                row.append(self._format_comparison(metrics1[constraint], metrics2[constraint]))
+            else:
+                row.append("N/A")
 
-        # Overall quality comparison
-        overall_comp = self._determine_overall_quality(metrics1, metrics2, time1, time2)
+        # Add overall quality
+        overall_comp = self._determine_overall_quality(metrics1, metrics2, time1, time2, active_constraints)
+        row.append(overall_comp)
 
-        # Update statistics
-        self._update_statistics(metrics1, metrics2, statistics)
-
-        return [
-            instance_name, f"{time1}ms", f"{time2}ms", room_usage_comp, time_spread_comp, student_gaps_comp, room_balance_comp,
-            time_dist_comp, trans_time_comp, dept_group_comp, room_seq_comp, dur_bal_comp, invig_load_comp, overall_comp
-        ]
+        return row
 
     def _create_unsat_row(self, instance_name):
         return [instance_name, "UNSAT", "UNSAT"] + ["N/A"] * 11 + ["Both UNSAT"]
 
-    def _create_partial_sat_row(self, instance_name, is_solver1_sat, solve_time):
+    def _create_partial_sat_row(self, instance_name, is_solver1_sat, solve_time, num_columns):
         solver_name = "S1" if is_solver1_sat else "S2"
         base = [
             instance_name,
             f"{solve_time}ms" if is_solver1_sat else "UNSAT",
             "UNSAT" if is_solver1_sat else f"{solve_time}ms"
         ]
-        metrics = [f"{solver_name} only"] * 11  # Extend for all metrics
+        metrics = [f"{solver_name} only"] * (num_columns - 4)  # -4 for instance, times, and overall
         return base + metrics + [f"{solver_name} (found solution)"]
 
-    def _create_error_row(self, instance_name):
-        return [instance_name, "Error", "Error"] + ["N/A"] * 11 + ["Error"]
+    def _create_error_row(self, instance_name, num_columns):
+        return [instance_name, "Error", "Error"] + ["N/A"] * (num_columns - 3)
 
     def _update_statistics(self, metrics1, metrics2, statistics):
         """Update all statistics for both original and additional constraints"""
