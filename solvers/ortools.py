@@ -55,10 +55,6 @@ class ORToolsSolver(BaseSolver):
         return 'OR-Tools CP-SAT'
 
     def solve(self) -> list[dict[str, int | Any]] | None:
-        # Check if problem name contains "unsat"
-        if hasattr(self.problem, 'name') and 'unsat' in self.problem.name.lower():
-            return None
-
         # Apply constraints
         for constraint in self.constraints:
             constraint.apply_ortools(self.model, self.problem, self.exam_time, self.exam_room)
