@@ -39,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated with minor changes in code structure.
 - Refactored to make Ortools solver analyzes the constraints better.
 - Refactored Table GUI for visualizing results to be more user-friendly.
+- Added comments and docblocks to the code for better understanding and readability.
 
 ### Improved
 - Updated statistics visualization buttons and their information display options.
